@@ -1,4 +1,4 @@
-module HTTPUtils
+module github.com/mitja6889/HTTPUtils
 
 go 1.24.4
 
