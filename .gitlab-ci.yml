@@ -1,0 +1,35 @@
+spec:
+  inputs:
+    CI_PROJECT_NAME_CUSTOM:
+      type: string
+      description: 'The name of the project, used for naming the binary and Docker image'
+      default: $CI_PROJECT_NAME
+    CI_PROJECT_DIR_CUSTOM:
+      type: string
+      description: 'The directory of the project, used for changing to the correct directory'
+      default: $CI_PROJECT_DIR
+    CI_REGISTRY_IMAGE_CUSTOM:
+      type: string
+      description: 'The container registry image path, used for pushing the Docker image'
+      default: $CI_REGISTRY_IMAGE
+    IS_MR_PIPELINE_CUSTOM:
+      type: string
+      description: 'Indicates if the pipeline is for a merge request'
+      default: "false"
+---
+
+include:
+  - project: 'common/GitLabBuildConfigs'
+    ref: 'master'
+    file:
+      - '/go/.go-base-template.yml'
+      - '/go/.go-lint-template.yml'
+      - '/go/.go-sonar-template.yml'
+      - '/go/.go-lint-deps-template.yml'
+      - '/go/.go-lib-template.yml'
+    inputs:
+      CI_PROJECT_NAME_CUSTOM: $[[inputs.CI_PROJECT_NAME_CUSTOM]]
+      CI_PROJECT_DIR_CUSTOM: $[[inputs.CI_PROJECT_DIR_CUSTOM]]
+      CI_REGISTRY_IMAGE_CUSTOM: $[[inputs.CI_REGISTRY_IMAGE_CUSTOM]]
+      IS_MR_PIPELINE_CUSTOM: $[[inputs.IS_MR_PIPELINE_CUSTOM]]
+
