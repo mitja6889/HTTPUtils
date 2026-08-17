@@ -2,7 +2,10 @@
 <html lang="sl">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#1a2e1f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>LifeFlow — Produktivnost &amp; Življenjski načrt</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -11,6 +14,14 @@
 </head>
 <body>
   <div class="app">
+    <header class="mobile-header">
+      <div class="mobile-brand">
+        <span class="brand-icon">🌿</span>
+        <span>LifeFlow</span>
+      </div>
+      <p id="mobile-date"></p>
+    </header>
+
     <aside class="sidebar">
       <div class="brand">
         <span class="brand-icon">🌿</span>
@@ -87,24 +98,27 @@
 
       <!-- PLANS -->
       <section id="view-plans" class="view">
+        <div class="week-nav" id="week-nav"></div>
         <div class="filters">
           <input type="search" id="plan-search" placeholder="Išči načrte..." class="search-input">
-          <select id="plan-filter-status" class="select">
-            <option value="">Vsi statusi</option>
-            <option value="todo">Za narediti</option>
-            <option value="in_progress">V teku</option>
-            <option value="done">Končano</option>
-          </select>
-          <select id="plan-filter-category" class="select">
-            <option value="">Vse kategorije</option>
-            <option value="work">Delo</option>
-            <option value="health">Zdravje</option>
-            <option value="personal">Osebno</option>
-            <option value="learning">Učenje</option>
-            <option value="other">Ostalo</option>
-          </select>
+          <div class="filter-row">
+            <select id="plan-filter-status" class="select">
+              <option value="">Vsi statusi</option>
+              <option value="todo">Za narediti</option>
+              <option value="in_progress">V teku</option>
+              <option value="done">Končano</option>
+            </select>
+            <select id="plan-filter-category" class="select">
+              <option value="">Vse kategorije</option>
+              <option value="work">Delo</option>
+              <option value="health">Zdravje</option>
+              <option value="personal">Osebno</option>
+              <option value="learning">Učenje</option>
+              <option value="other">Ostalo</option>
+            </select>
+          </div>
         </div>
-        <div class="plans-grid" id="plans-list"></div>
+        <div id="plans-list"></div>
       </section>
 
       <!-- GOALS -->
@@ -135,6 +149,25 @@
   </div>
 
   <div class="toast-container" id="toast-container"></div>
+
+  <nav class="bottom-nav" aria-label="Glavna navigacija">
+    <button class="bottom-nav-item active" data-view="overview">
+      <span class="bottom-nav-icon">📊</span>
+      <span class="bottom-nav-label">Pregled</span>
+    </button>
+    <button class="bottom-nav-item" data-view="plans">
+      <span class="bottom-nav-icon">📋</span>
+      <span class="bottom-nav-label">Načrti</span>
+    </button>
+    <button class="bottom-nav-item" data-view="goals">
+      <span class="bottom-nav-icon">🎯</span>
+      <span class="bottom-nav-label">Cilji</span>
+    </button>
+    <button class="bottom-nav-item" data-view="habits">
+      <span class="bottom-nav-icon">🔥</span>
+      <span class="bottom-nav-label">Navade</span>
+    </button>
+  </nav>
 
   <script src="/js/app.js"></script>
 </body>

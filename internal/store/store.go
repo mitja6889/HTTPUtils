@@ -46,6 +46,10 @@ func New(path string) (*Store, error) {
 		return nil, err
 	}
 
+	if err := s.SeedIfEmpty(); err != nil {
+		return nil, err
+	}
+
 	return s, nil
 }
 

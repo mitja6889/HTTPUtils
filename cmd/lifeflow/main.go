@@ -20,11 +20,19 @@ var webFS embed.FS
 func main() {
 	addr := flag.String("addr", ":8080", "HTTP listen address")
 	dataPath := flag.String("data", defaultDataPath(), "Path to JSON data file")
+	seed := flag.Bool("seed", false, "Load demo data (plans for 1 week, goals, habits)")
 	flag.Parse()
 
 	s, err := store.New(*dataPath)
 	if err != nil {
 		log.Fatalf("store init: %v", err)
+	}
+
+	if *seed {
+		if err := s.SeedDemo(); err != nil {
+			log.Fatalf("seed demo: %v", err)
+		}
+		log.Println("Demo data loaded")
 	}
 
 	mux := http.NewServeMux()

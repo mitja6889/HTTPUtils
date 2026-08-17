@@ -38,6 +38,7 @@ let goals = [];
 let habits = [];
 let overview = null;
 let editingId = null;
+let selectedWeekDay = todayStr();
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
@@ -53,18 +54,28 @@ async function init() {
 }
 
 function setTodayDate() {
-  const el = $('#today-date');
-  if (!el) return;
-  el.textContent = new Date().toLocaleDateString('sl-SI', {
+  const formatted = new Date().toLocaleDateString('sl-SI', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
     year: 'numeric',
   });
+
+  const el = $('#today-date');
+  if (el) el.textContent = formatted;
+
+  const mobile = $('#mobile-date');
+  if (mobile) {
+    mobile.textContent = new Date().toLocaleDateString('sl-SI', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+    });
+  }
 }
 
 function bindNavigation() {
-  $$('.nav-item').forEach((btn) => {
+  $$('.nav-item, .bottom-nav-item').forEach((btn) => {
     btn.addEventListener('click', () => switchView(btn.dataset.view));
   });
 
@@ -91,7 +102,9 @@ function bindFilters() {
 
 function switchView(view) {
   currentView = view;
-  $$('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
+  $$('.nav-item, .bottom-nav-item').forEach((b) => {
+    b.classList.toggle('active', b.dataset.view === view);
+  });
   $$('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${view}`));
 
   const meta = VIEW_META[view];
@@ -116,6 +129,7 @@ async function refreshAll() {
       fetchJSON(`${API}/habits`),
     ]);
     renderOverview();
+    renderWeekNav();
     renderPlans();
     renderGoals();
     renderHabits();
@@ -218,6 +232,38 @@ function renderMiniList(selector, items, icon, emptyText) {
   }).join('');
 }
 
+function renderWeekNav() {
+  const el = $('#week-nav');
+  if (!el) return;
+
+  const today = todayStr();
+  const start = new Date(today + 'T00:00:00');
+
+  el.innerHTML = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(start);
+    d.setDate(d.getDate() + i);
+    const dateStr = d.toISOString().slice(0, 10);
+    const count = plans.filter((p) => p.dueDate === dateStr).length;
+    const isToday = dateStr === today;
+    const isActive = dateStr === selectedWeekDay;
+
+    return `
+      <button type="button" class="week-day ${isActive ? 'active' : ''} ${isToday ? 'today' : ''}"
+        onclick="selectWeekDay('${dateStr}')">
+        <div class="week-day-name">${d.toLocaleDateString('sl-SI', { weekday: 'short' })}</div>
+        <div class="week-day-num">${d.getDate()}</div>
+        <div class="week-day-count">${count} ${count === 1 ? 'načrt' : 'načrti'}</div>
+      </button>
+    `;
+  }).join('');
+}
+
+window.selectWeekDay = (dateStr) => {
+  selectedWeekDay = dateStr;
+  renderWeekNav();
+  renderPlans();
+};
+
 function renderPlans() {
   const search = ($('#plan-search')?.value || '').toLowerCase();
   const statusFilter = $('#plan-filter-status')?.value || '';
@@ -228,37 +274,81 @@ function renderPlans() {
     if (search && !p.title.toLowerCase().includes(search) && !(p.description || '').toLowerCase().includes(search)) return false;
     if (statusFilter && p.status !== statusFilter) return false;
     if (catFilter && p.category !== catFilter) return false;
+    if (p.dueDate && p.dueDate !== selectedWeekDay) return false;
+    if (!p.dueDate && selectedWeekDay !== today) return false;
     return true;
   });
 
   const el = $('#plans-list');
   if (filtered.length === 0) {
-    el.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><span>📋</span>Ni načrtov. Dodaj prvega!</div>';
+    el.innerHTML = `<div class="empty-state"><span>📋</span>Ni načrtov za ta dan.</div>`;
     return;
   }
 
-  el.innerHTML = filtered.map((p) => {
-    const overdue = p.dueDate && p.dueDate < today && p.status !== 'done';
-    return `
-      <div class="plan-card" data-id="${p.id}">
-        <div class="plan-card-header">
-          <h4>${esc(p.title)}</h4>
-          <span class="badge badge-${p.status}">${LABELS.status[p.status]}</span>
-        </div>
-        ${p.description ? `<p class="plan-desc">${esc(p.description)}</p>` : ''}
-        <div class="plan-meta">
-          <span class="badge badge-cat-${p.category}">${LABELS.category[p.category]}</span>
-          <span class="badge badge-priority-${p.priority}">${LABELS.priority[p.priority]}</span>
-          ${p.dueDate ? `<span class="badge ${overdue ? 'badge-overdue' : ''}">${overdue ? '⚠ ' : ''}${formatDate(p.dueDate)}</span>` : ''}
-        </div>
-        <div class="plan-actions">
-          ${p.status !== 'done' ? `<button class="btn btn-sm btn-primary" onclick="cycleStatus('${p.id}')">${nextStatusLabel(p.status)}</button>` : ''}
-          <button class="btn btn-sm btn-ghost" onclick="editPlan('${p.id}')">Uredi</button>
-          <button class="btn btn-sm btn-danger" onclick="deletePlan('${p.id}')">Izbriši</button>
-        </div>
+  const grouped = groupPlansByDay(filtered);
+  el.innerHTML = grouped.map(({ date, label, items }) => `
+    <div class="day-group">
+      <div class="day-group-header">
+        <h3>${label}</h3>
+        <span class="day-label">${items.length} ${items.length === 1 ? 'načrt' : 'načrti'}</span>
       </div>
-    `;
-  }).join('');
+      <div class="day-group-plans">
+        ${items.map((p) => planCardHTML(p, today)).join('')}
+      </div>
+    </div>
+  `).join('');
+}
+
+function groupPlansByDay(items) {
+  const map = new Map();
+  for (const p of items) {
+    const key = p.dueDate || todayStr();
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(p);
+  }
+
+  return [...map.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, plansForDay]) => ({
+      date,
+      label: formatDayLabel(date),
+      items: plansForDay,
+    }));
+}
+
+function formatDayLabel(dateStr) {
+  const today = todayStr();
+  const tomorrow = addDays(today, 1);
+  if (dateStr === today) return 'Danes';
+  if (dateStr === tomorrow) return 'Jutri';
+  return new Date(dateStr + 'T00:00:00').toLocaleDateString('sl-SI', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  });
+}
+
+function planCardHTML(p, today) {
+  const overdue = p.dueDate && p.dueDate < today && p.status !== 'done';
+  return `
+    <div class="plan-card" data-id="${p.id}">
+      <div class="plan-card-header">
+        <h4>${esc(p.title)}</h4>
+        <span class="badge badge-${p.status}">${LABELS.status[p.status]}</span>
+      </div>
+      ${p.description ? `<p class="plan-desc">${esc(p.description)}</p>` : ''}
+      <div class="plan-meta">
+        <span class="badge badge-cat-${p.category}">${LABELS.category[p.category]}</span>
+        <span class="badge badge-priority-${p.priority}">${LABELS.priority[p.priority]}</span>
+        ${p.dueDate ? `<span class="badge ${overdue ? 'badge-overdue' : ''}">${overdue ? '⚠ ' : ''}${formatDate(p.dueDate)}</span>` : ''}
+      </div>
+      <div class="plan-actions">
+        ${p.status !== 'done' ? `<button class="btn btn-sm btn-primary" onclick="cycleStatus('${p.id}')">${nextStatusLabel(p.status)}</button>` : ''}
+        <button class="btn btn-sm btn-ghost" onclick="editPlan('${p.id}')">Uredi</button>
+        <button class="btn btn-sm btn-danger" onclick="deletePlan('${p.id}')">Izbriši</button>
+      </div>
+    </div>
+  `;
 }
 
 function renderGoals() {
@@ -567,6 +657,12 @@ function formatDate(d) {
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function addDays(dateStr, days) {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
 }
 
 function esc(str) {
