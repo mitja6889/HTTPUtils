@@ -20,11 +20,14 @@
 
   <div class="app">
     <header class="mobile-header">
-      <div class="mobile-brand">
+      <div class="mobile-header-left">
         <span class="brand-icon">🌿</span>
-        <span>LifeFlow</span>
+        <div>
+          <h1 id="mobile-title">Pregled</h1>
+          <p id="mobile-date"></p>
+        </div>
       </div>
-      <p id="mobile-date"></p>
+      <button class="btn btn-primary btn-icon-mobile" id="mobile-add-btn" hidden aria-label="Dodaj">+</button>
     </header>
 
     <aside class="sidebar">
@@ -81,7 +84,11 @@
 
         <div class="finance-summary" id="finance-summary"></div>
 
-        <div class="charts-grid">
+        <button type="button" class="mobile-section-toggle" id="charts-toggle" aria-expanded="false">
+          <span>Grafi & statistika</span>
+          <span class="toggle-chevron">▼</span>
+        </button>
+        <div class="charts-grid mobile-collapsible" id="charts-section" hidden>
           <div class="card">
             <div class="card-header"><h3>Načrti po statusu</h3></div>
             <div class="card-body chart-wrap"><canvas id="chart-plans"></canvas></div>
@@ -222,7 +229,7 @@
   <nav class="bottom-nav" aria-label="Glavna navigacija">
     <button class="bottom-nav-item active" data-view="overview">
       <span class="bottom-nav-icon">📊</span>
-      <span class="bottom-nav-label">Pregled</span>
+      <span class="bottom-nav-label">Domov</span>
     </button>
     <button class="bottom-nav-item" data-view="plans">
       <span class="bottom-nav-icon">📋</span>
@@ -232,15 +239,26 @@
       <span class="bottom-nav-icon">💰</span>
       <span class="bottom-nav-label">Finance</span>
     </button>
-    <button class="bottom-nav-item" data-view="goals">
-      <span class="bottom-nav-icon">🎯</span>
-      <span class="bottom-nav-label">Cilji</span>
-    </button>
-    <button class="bottom-nav-item" data-view="habits">
-      <span class="bottom-nav-icon">🔥</span>
-      <span class="bottom-nav-label">Navade</span>
+    <button class="bottom-nav-item" data-view="more" id="more-nav-btn">
+      <span class="bottom-nav-icon">☰</span>
+      <span class="bottom-nav-label">Več</span>
     </button>
   </nav>
+
+  <div class="more-sheet" id="more-sheet" hidden>
+    <div class="more-sheet-backdrop" data-action="close-more"></div>
+    <div class="more-sheet-panel">
+      <h3>Več</h3>
+      <button type="button" class="more-sheet-item" data-view="goals">
+        <span>🎯</span> Cilji
+      </button>
+      <button type="button" class="more-sheet-item" data-view="habits">
+        <span>🔥</span> Navade
+      </button>
+    </div>
+  </div>
+
+  <button class="fab" id="fab-add" hidden aria-label="Dodaj">+</button>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="/js/charts.js"></script>

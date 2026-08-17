@@ -52,9 +52,50 @@ async function init() {
 
 function bindNavigation() {
   $$('.nav-item, .bottom-nav-item').forEach((btn) => {
-    btn.addEventListener('click', () => switchView(btn.dataset.view));
+    btn.addEventListener('click', () => {
+      if (btn.dataset.view === 'more') {
+        openMoreSheet();
+        return;
+      }
+      closeMoreSheet();
+      switchView(btn.dataset.view);
+    });
   });
+
+  $$('.more-sheet-item').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      closeMoreSheet();
+      switchView(btn.dataset.view);
+    });
+  });
+
+  document.querySelector('[data-action="close-more"]')?.addEventListener('click', closeMoreSheet);
+
   $('#add-btn').addEventListener('click', () => openModal(currentView));
+  $('#fab-add').addEventListener('click', () => openModal(currentView));
+  $('#mobile-add-btn').addEventListener('click', () => openModal(currentView));
+
+  $('#charts-toggle')?.addEventListener('click', () => {
+    const section = $('#charts-section');
+    const btn = $('#charts-toggle');
+    const open = section.hidden;
+    section.hidden = !open;
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open && overview?.charts) {
+      requestAnimationFrame(() => renderCharts(overview.charts));
+    }
+  });
+}
+
+function openMoreSheet() {
+  $('#more-sheet').hidden = false;
+  $$('.bottom-nav-item').forEach((b) => b.classList.remove('active'));
+  $('#more-nav-btn')?.classList.add('active');
+}
+
+function closeMoreSheet() {
+  const sheet = $('#more-sheet');
+  if (sheet) sheet.hidden = true;
 }
 
 function bindModal() {
@@ -115,17 +156,39 @@ function bindDelegatedActions() {
 }
 
 function switchView(view) {
+  if (!VIEW_META[view]) return;
+
   currentView = view;
-  $$('.nav-item, .bottom-nav-item').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
+  closeMoreSheet();
+
+  $$('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
+  $$('.bottom-nav-item').forEach((b) => {
+    if (b.id === 'more-nav-btn') {
+      b.classList.remove('active');
+    } else {
+      b.classList.toggle('active', b.dataset.view === view);
+    }
+  });
+
   $$('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${view}`));
 
   const meta = VIEW_META[view];
   $('#view-title').textContent = meta.title;
   $('#view-subtitle').textContent = meta.subtitle;
 
-  const addBtn = $('#add-btn');
-  addBtn.hidden = !meta.add;
-  if (meta.add) addBtn.innerHTML = `<span>+</span> ${meta.addLabel}`;
+  const mobileTitle = $('#mobile-title');
+  if (mobileTitle) mobileTitle.textContent = meta.title;
+
+  const showAdd = meta.add;
+  $('#add-btn').hidden = !showAdd;
+  $('#fab-add').hidden = !showAdd;
+  $('#mobile-add-btn').hidden = !showAdd;
+
+  if (showAdd) {
+    $('#add-btn').innerHTML = `<span>+</span> ${meta.addLabel}`;
+  }
+
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 async function refreshAll() {
@@ -221,20 +284,20 @@ function renderOverview() {
   if (!overview) return;
 
   $('#stats-grid').innerHTML = `
-    <div class="stat-card"><div class="label">Skupaj načrtov</div><div class="value accent">${overview.totalPlans}</div></div>
+    <div class="stat-card"><div class="label">Načrti</div><div class="value accent">${overview.totalPlans}</div></div>
     <div class="stat-card"><div class="label">V teku</div><div class="value">${overview.inProgressPlans}</div></div>
-    <div class="stat-card"><div class="label">Končano</div><div class="value accent">${overview.completedPlans}</div></div>
+    <div class="stat-card stat-extra"><div class="label">Končano</div><div class="value accent">${overview.completedPlans}</div></div>
     <div class="stat-card"><div class="label">Z zamudo</div><div class="value danger">${overview.overduePlans}</div></div>
-    <div class="stat-card"><div class="label">Aktivni cilji</div><div class="value warm">${overview.activeGoals}</div></div>
-    <div class="stat-card"><div class="label">Povp. napredek</div><div class="value">${Math.round(overview.avgGoalProgress)}%</div></div>
-    <div class="stat-card"><div class="label">Navade</div><div class="value">${overview.totalHabits}</div></div>
+    <div class="stat-card stat-extra"><div class="label">Aktivni cilji</div><div class="value warm">${overview.activeGoals}</div></div>
+    <div class="stat-card stat-extra"><div class="label">Povp. napredek</div><div class="value">${Math.round(overview.avgGoalProgress)}%</div></div>
+    <div class="stat-card stat-extra"><div class="label">Navade</div><div class="value">${overview.totalHabits}</div></div>
     <div class="stat-card"><div class="label">Stanje</div><div class="value ${overview.finance?.balance >= 0 ? 'accent' : 'danger'}">${formatEUR(overview.finance?.balance || 0)}</div></div>
-    <div class="stat-card"><div class="label">Skupni streak</div><div class="value warm">${overview.totalStreak}🔥</div></div>
+    <div class="stat-card stat-extra"><div class="label">Streak</div><div class="value warm">${overview.totalStreak}🔥</div></div>
   `;
 
   renderFinanceSummary('#finance-summary', overview.finance);
 
-  if (overview.charts) {
+  if (overview.charts && !$('#charts-section')?.hidden) {
     renderCharts(overview.charts);
   }
 
@@ -813,8 +876,10 @@ function renderTransactions() {
         <div class="meta">${LABELS.financeCat[t.category]} · ${formatDate(t.date)}${t.goalId ? ' · 🎯 Cilj' : ''}</div>
       </div>
       <div class="transaction-amount ${t.type}">${t.type === 'income' ? '+' : '-'}${formatEUR(t.amount)}</div>
-      <button class="btn btn-sm btn-ghost" data-action="edit-transaction" data-id="${t.id}">Uredi</button>
-      <button class="btn btn-sm btn-danger" data-action="delete-transaction" data-id="${t.id}">×</button>
+      <div class="transaction-actions">
+        <button class="btn btn-sm btn-ghost" data-action="edit-transaction" data-id="${t.id}">Uredi</button>
+        <button class="btn btn-sm btn-danger" data-action="delete-transaction" data-id="${t.id}">Izbriši</button>
+      </div>
     </div>
   `).join('');
 }
