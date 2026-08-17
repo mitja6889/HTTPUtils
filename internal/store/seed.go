@@ -49,35 +49,36 @@ func demoData() models.DataStore {
 
 	goals := []models.Goal{
 		{
-			ID:          "goal01",
-			Title:       "Teči pol maraton",
+			ID: "goal01", Title: "Teči pol maraton",
 			Description: "Priprava na ljubljanski polmaraton — 3x tedensko",
-			TargetDate:  dayOffset(today, 60),
-			Progress:    35,
-			Status:      models.GoalStatusActive,
-			CreatedAt:   models.NowISO(),
-			UpdatedAt:   models.NowISO(),
+			Kind: models.GoalKindManual, TargetDate: dayOffset(today, 60), Progress: 35,
+			Status: models.GoalStatusActive, CreatedAt: models.NowISO(), UpdatedAt: models.NowISO(),
 		},
 		{
-			ID:          "goal02",
-			Title:       "Nauči se Go programiranja",
+			ID: "goal02", Title: "Nauči se Go programiranja",
 			Description: "Dokončaj online tečaj in napiši prvo API aplikacijo",
-			TargetDate:  dayOffset(today, 45),
-			Progress:    60,
-			Status:      models.GoalStatusActive,
-			CreatedAt:   models.NowISO(),
-			UpdatedAt:   models.NowISO(),
+			Kind: models.GoalKindManual, TargetDate: dayOffset(today, 45), Progress: 60,
+			Status: models.GoalStatusActive, CreatedAt: models.NowISO(), UpdatedAt: models.NowISO(),
 		},
 		{
-			ID:          "goal03",
-			Title:       "Varčevanje za potovanje",
+			ID: "goal03", Title: "Varčevanje za potovanje",
 			Description: "Cilj: 1500 € do poletja",
-			TargetDate:  dayOffset(today, 90),
-			Progress:    20,
-			Status:      models.GoalStatusActive,
-			CreatedAt:   models.NowISO(),
-			UpdatedAt:   models.NowISO(),
+			Kind: models.GoalKindFinancial, TargetDate: dayOffset(today, 90), TargetAmount: 1500,
+			Status: models.GoalStatusActive, CreatedAt: models.NowISO(), UpdatedAt: models.NowISO(),
 		},
+	}
+
+	transactions := []models.Transaction{
+		tx("tx01", models.TransactionIncome, 2200, models.FinanceSalary, "Plača", dayOffset(today, -15), ""),
+		tx("tx02", models.TransactionIncome, 350, models.FinanceFreelance, "Freelance projekt", dayOffset(today, -8), ""),
+		tx("tx03", models.TransactionIncome, 300, models.FinanceInvestment, "Varčevanje za potovanje", dayOffset(today, -5), "goal03"),
+		tx("tx04", models.TransactionIncome, 200, models.FinanceInvestment, "Varčevanje za potovanje", dayOffset(today, -2), "goal03"),
+		tx("tx05", models.TransactionExpense, 85, models.FinanceFood, "Živila", dayOffset(today, -3), ""),
+		tx("tx06", models.TransactionExpense, 45, models.FinanceTransport, "Gorivo", dayOffset(today, -2), ""),
+		tx("tx07", models.TransactionExpense, 650, models.FinanceHousing, "Najemnina", dayOffset(today, -10), ""),
+		tx("tx08", models.TransactionExpense, 32, models.FinanceEntertainment, "Kino", dayOffset(today, -1), ""),
+		tx("tx09", models.TransactionExpense, 120, models.FinanceShopping, "Obleka", dayOffset(today, 0), ""),
+		tx("tx10", models.TransactionIncome, 1800, models.FinanceSalary, "Plača", dayOffset(today, 0), ""),
 	}
 
 	habits := []models.Habit{
@@ -88,10 +89,19 @@ func demoData() models.DataStore {
 	}
 
 	return models.DataStore{
-		Version: models.DataStoreVersion,
-		Plans:   plans,
-		Goals:  goals,
-		Habits: habits,
+		Version:      models.DataStoreVersion,
+		Plans:        plans,
+		Goals:        goals,
+		Habits:       habits,
+		Transactions: transactions,
+		Finance:      models.FinanceSettings{InitialBalance: 420},
+	}
+}
+
+func tx(id string, typ models.TransactionType, amount float64, cat models.FinanceCategory, desc, date, goalID string) models.Transaction {
+	return models.Transaction{
+		ID: id, Type: typ, Amount: amount, Category: cat,
+		Description: desc, Date: date, GoalID: goalID, CreatedAt: models.NowISO(),
 	}
 }
 

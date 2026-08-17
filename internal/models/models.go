@@ -56,15 +56,25 @@ const (
 	GoalStatusPaused    GoalStatus = "paused"
 )
 
+type GoalKind string
+
+const (
+	GoalKindManual    GoalKind = "manual"
+	GoalKindFinancial GoalKind = "financial"
+)
+
 type Goal struct {
-	ID          string     `json:"id"`
-	Title       string     `json:"title"`
-	Description string     `json:"description"`
-	TargetDate  string     `json:"targetDate,omitempty"`
-	Progress    int        `json:"progress"`
-	Status      GoalStatus `json:"status"`
-	CreatedAt   string     `json:"createdAt"`
-	UpdatedAt   string     `json:"updatedAt"`
+	ID            string     `json:"id"`
+	Title         string     `json:"title"`
+	Description   string     `json:"description"`
+	Kind          GoalKind   `json:"kind"`
+	TargetDate    string     `json:"targetDate,omitempty"`
+	TargetAmount  float64    `json:"targetAmount,omitempty"`
+	CurrentAmount float64    `json:"currentAmount,omitempty"`
+	Progress      int        `json:"progress"`
+	Status        GoalStatus `json:"status"`
+	CreatedAt     string     `json:"createdAt"`
+	UpdatedAt     string     `json:"updatedAt"`
 }
 
 type Habit struct {
@@ -76,14 +86,84 @@ type Habit struct {
 	CreatedAt string `json:"createdAt"`
 }
 
-type DataStore struct {
-	Version int     `json:"version"`
-	Plans   []Plan  `json:"plans"`
-	Goals   []Goal  `json:"goals"`
-	Habits  []Habit `json:"habits"`
+type TransactionType string
+
+const (
+	TransactionIncome  TransactionType = "income"
+	TransactionExpense TransactionType = "expense"
+)
+
+type FinanceCategory string
+
+const (
+	FinanceSalary       FinanceCategory = "salary"
+	FinanceFreelance    FinanceCategory = "freelance"
+	FinanceInvestment   FinanceCategory = "investment"
+	FinanceFood         FinanceCategory = "food"
+	FinanceTransport    FinanceCategory = "transport"
+	FinanceHousing      FinanceCategory = "housing"
+	FinanceEntertainment FinanceCategory = "entertainment"
+	FinanceHealth       FinanceCategory = "health"
+	FinanceShopping     FinanceCategory = "shopping"
+	FinanceOther        FinanceCategory = "other"
+)
+
+type Transaction struct {
+	ID          string            `json:"id"`
+	Type        TransactionType   `json:"type"`
+	Amount      float64           `json:"amount"`
+	Category    FinanceCategory   `json:"category"`
+	Description string            `json:"description"`
+	Date        string            `json:"date"`
+	GoalID      string            `json:"goalId,omitempty"`
+	CreatedAt   string            `json:"createdAt"`
 }
 
-const DataStoreVersion = 1
+type FinanceSettings struct {
+	InitialBalance float64 `json:"initialBalance"`
+}
+
+type MonthlyPoint struct {
+	Month   string  `json:"month"`
+	Income  float64 `json:"income"`
+	Expense float64 `json:"expense"`
+}
+
+type ChartPoint struct {
+	Label string  `json:"label"`
+	Value float64 `json:"value"`
+}
+
+type FinanceStats struct {
+	Balance              float64            `json:"balance"`
+	TotalIncome          float64            `json:"totalIncome"`
+	TotalExpense         float64            `json:"totalExpense"`
+	MonthIncome          float64            `json:"monthIncome"`
+	MonthExpense         float64            `json:"monthExpense"`
+	MonthBalance         float64            `json:"monthBalance"`
+	ByCategory           map[string]float64 `json:"byCategory"`
+	MonthlyTrend         []MonthlyPoint     `json:"monthlyTrend"`
+	RecentTransactions   []Transaction      `json:"recentTransactions"`
+}
+
+type DashboardCharts struct {
+	PlansByStatus      []ChartPoint   `json:"plansByStatus"`
+	GoalsProgress      []ChartPoint   `json:"goalsProgress"`
+	FinanceMonthly     []MonthlyPoint `json:"financeMonthly"`
+	ExpenseCategories  []ChartPoint   `json:"expenseCategories"`
+	HabitsActivity     []ChartPoint   `json:"habitsActivity"`
+}
+
+type DataStore struct {
+	Version      int               `json:"version"`
+	Plans        []Plan            `json:"plans"`
+	Goals        []Goal            `json:"goals"`
+	Habits       []Habit           `json:"habits"`
+	Transactions []Transaction     `json:"transactions"`
+	Finance      FinanceSettings   `json:"finance"`
+}
+
+const DataStoreVersion = 2
 
 type Overview struct {
 	TotalPlans       int            `json:"totalPlans"`
@@ -103,6 +183,8 @@ type Overview struct {
 	RecentPlans      []Plan         `json:"recentPlans"`
 	UpcomingPlans    []Plan         `json:"upcomingPlans"`
 	OverduePlansList []Plan         `json:"overduePlansList"`
+	Finance          FinanceStats   `json:"finance"`
+	Charts           DashboardCharts `json:"charts"`
 }
 
 func NowISO() string {

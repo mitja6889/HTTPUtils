@@ -364,19 +364,23 @@ type updatePlanInput struct {
 }
 
 type createGoalInput struct {
-	Title       string            `json:"title"`
-	Description string            `json:"description"`
-	TargetDate  string            `json:"targetDate"`
-	Progress    int               `json:"progress"`
-	Status      models.GoalStatus `json:"status"`
+	Title        string            `json:"title"`
+	Description  string            `json:"description"`
+	Kind         models.GoalKind   `json:"kind"`
+	TargetDate   string            `json:"targetDate"`
+	TargetAmount float64           `json:"targetAmount"`
+	Progress     int               `json:"progress"`
+	Status       models.GoalStatus `json:"status"`
 }
 
 type updateGoalInput struct {
-	Title       *string            `json:"title"`
-	Description *string            `json:"description"`
-	TargetDate  *string            `json:"targetDate"`
-	Progress    *int               `json:"progress"`
-	Status      *models.GoalStatus `json:"status"`
+	Title        *string            `json:"title"`
+	Description  *string            `json:"description"`
+	Kind         *models.GoalKind   `json:"kind"`
+	TargetDate   *string            `json:"targetDate"`
+	TargetAmount *float64           `json:"targetAmount"`
+	Progress     *int               `json:"progress"`
+	Status       *models.GoalStatus `json:"status"`
 }
 
 type createHabitInput struct {
@@ -527,19 +531,42 @@ func (a *API) createGoal(input createGoalInput) (models.Goal, error) {
 		return models.Goal{}, err
 	}
 
-	now := models.NowISO()
-	goal := models.Goal{
-		ID:          newID(),
-		Title:       title,
-		Description: strings.TrimSpace(input.Description),
-		TargetDate:  input.TargetDate,
-		Progress:    validate.ClampProgress(input.Progress),
-		Status:      status,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+	kind := input.Kind
+	if kind == "" {
+		if input.TargetAmount > 0 {
+			kind = models.GoalKindFinancial
+		} else {
+			kind = models.GoalKindManual
+		}
+	}
+	if err := validate.GoalKind(kind); err != nil {
+		return models.Goal{}, err
 	}
 
-	return a.store.CreateGoal(goal)
+	now := models.NowISO()
+	progress := validate.ClampProgress(input.Progress)
+	if kind == models.GoalKindFinancial {
+		progress = 0
+	}
+
+	goal := models.Goal{
+		ID:           newID(),
+		Title:        title,
+		Description:  strings.TrimSpace(input.Description),
+		Kind:         kind,
+		TargetDate:   input.TargetDate,
+		TargetAmount: input.TargetAmount,
+		Progress:     progress,
+		Status:       status,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+
+	created, err := a.store.CreateGoal(goal)
+	if err != nil {
+		return models.Goal{}, err
+	}
+	return a.store.EnrichGoal(created), nil
 }
 
 func applyGoalUpdate(g *models.Goal, input updateGoalInput) error {
@@ -559,7 +586,19 @@ func applyGoalUpdate(g *models.Goal, input updateGoalInput) error {
 		}
 		g.TargetDate = *input.TargetDate
 	}
-	if input.Progress != nil {
+	if input.Kind != nil {
+		if err := validate.GoalKind(*input.Kind); err != nil {
+			return err
+		}
+		g.Kind = *input.Kind
+	}
+	if input.TargetAmount != nil {
+		g.TargetAmount = *input.TargetAmount
+		if g.TargetAmount > 0 {
+			g.Kind = models.GoalKindFinancial
+		}
+	}
+	if input.Progress != nil && g.Kind != models.GoalKindFinancial {
 		g.Progress = validate.ClampProgress(*input.Progress)
 	}
 	if input.Status != nil {

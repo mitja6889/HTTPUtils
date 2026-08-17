@@ -137,3 +137,39 @@ func EffectiveHabitStreak(h models.Habit, today string) int {
 	}
 	return 0
 }
+
+func TransactionType(value models.TransactionType) error {
+	switch value {
+	case models.TransactionIncome, models.TransactionExpense:
+		return nil
+	default:
+		return fmt.Errorf("%w: transaction type", ErrInvalidEnum)
+	}
+}
+
+func FinanceCategory(value models.FinanceCategory) error {
+	switch value {
+	case models.FinanceSalary, models.FinanceFreelance, models.FinanceInvestment,
+		models.FinanceFood, models.FinanceTransport, models.FinanceHousing,
+		models.FinanceEntertainment, models.FinanceHealth, models.FinanceShopping, models.FinanceOther:
+		return nil
+	default:
+		return fmt.Errorf("%w: finance category", ErrInvalidEnum)
+	}
+}
+
+func GoalKind(value models.GoalKind) error {
+	switch value {
+	case models.GoalKindManual, models.GoalKindFinancial, "":
+		return nil
+	default:
+		return fmt.Errorf("%w: goal kind", ErrInvalidEnum)
+	}
+}
+
+func Amount(value float64) error {
+	if value <= 0 {
+		return errors.New("amount must be greater than zero")
+	}
+	return nil
+}

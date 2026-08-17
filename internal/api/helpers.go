@@ -30,6 +30,9 @@ func (a *API) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/goals/", a.handleGoalByID)
 	mux.HandleFunc("/api/habits", a.handleHabits)
 	mux.HandleFunc("/api/habits/", a.handleHabitByID)
+	mux.HandleFunc("/api/transactions", a.handleTransactions)
+	mux.HandleFunc("/api/transactions/", a.handleTransactionByID)
+	mux.HandleFunc("/api/finance/stats", a.handleFinanceStats)
 }
 
 func (a *API) handleHealth(w http.ResponseWriter, r *http.Request) {

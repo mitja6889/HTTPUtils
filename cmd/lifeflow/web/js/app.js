@@ -5,12 +5,20 @@ const LABELS = {
   priority: { low: 'Nizka', medium: 'Srednja', high: 'Visoka' },
   status: { todo: 'Za narediti', in_progress: 'V teku', done: 'Končano' },
   goalStatus: { active: 'Aktiven', completed: 'Dokončan', paused: 'Pavza' },
+  goalKind: { manual: 'Ročni', financial: 'Finančni' },
+  txType: { income: 'Prihodek', expense: 'Odhodek' },
+  financeCat: {
+    salary: 'Plača', freelance: 'Freelance', investment: 'Naložbe', food: 'Hrana',
+    transport: 'Prevoz', housing: 'Stanovanje', entertainment: 'Zabava', health: 'Zdravje',
+    shopping: 'Nakupi', other: 'Ostalo',
+  },
 };
 
 const VIEW_META = {
   overview: { title: 'Pregled', subtitle: 'Tvoj dnevni povzetek produktivnosti', add: false },
   plans: { title: 'Načrti', subtitle: 'Upravljaj svoje naloge in projekte', add: true, addLabel: 'Dodaj načrt' },
-  goals: { title: 'Cilji', subtitle: 'Dolgoročni cilji in napredek', add: true, addLabel: 'Dodaj cilj' },
+  finance: { title: 'Finance', subtitle: 'Stroški, zaslužki in stanje', add: true, addLabel: 'Dodaj transakcijo' },
+  goals: { title: 'Cilji', subtitle: 'Dolgoročni cilji z dinamičnim napredkom', add: true, addLabel: 'Dodaj cilj' },
   habits: { title: 'Navade', subtitle: 'Dnevne rutine za boljše življenje', add: true, addLabel: 'Dodaj navado' },
 };
 
@@ -20,6 +28,7 @@ let currentView = 'overview';
 let plans = [];
 let goals = [];
 let habits = [];
+let transactions = [];
 let overview = null;
 let editingId = null;
 let selectedWeekDay = localDateStr();
@@ -67,6 +76,8 @@ function bindFilters() {
     el.addEventListener('input', onPlanFiltersChanged);
     el.addEventListener('change', onPlanFiltersChanged);
   });
+  const financeFilter = document.getElementById('finance-filter-type');
+  if (financeFilter) financeFilter.addEventListener('change', renderTransactions);
 }
 
 function onPlanFiltersChanged() {
@@ -92,6 +103,8 @@ function bindDelegatedActions() {
       case 'delete-habit': await deleteHabit(id); break;
       case 'habit-done': await markHabitDone(id); break;
       case 'habit-undo': await undoHabitDone(id); break;
+      case 'delete-transaction': await deleteTransaction(id); break;
+      case 'edit-transaction': openModal('finance', id); break;
       case 'toggle-task': await toggleTask(id, btn.dataset.taskId); break;
       case 'select-day': selectWeekDay(btn.dataset.date); break;
       case 'retry-load': await refreshAll(); break;
@@ -120,11 +133,12 @@ async function refreshAll() {
   loadError = null;
   try {
     const today = localDateStr();
-    [overview, plans, goals, habits] = await Promise.all([
+    [overview, plans, goals, habits, transactions] = await Promise.all([
       fetchJSON(`${API}/overview?today=${today}`),
       fetchJSON(`${API}/plans`),
       fetchJSON(`${API}/goals`),
       fetchJSON(`${API}/habits?today=${today}`),
+      fetchJSON(`${API}/transactions`),
     ]);
     renderAll();
   } catch (err) {
@@ -143,6 +157,7 @@ function renderAll() {
   renderPlans();
   renderGoals();
   renderHabits();
+  renderFinance();
 }
 
 function renderErrorBanner() {
@@ -213,8 +228,15 @@ function renderOverview() {
     <div class="stat-card"><div class="label">Aktivni cilji</div><div class="value warm">${overview.activeGoals}</div></div>
     <div class="stat-card"><div class="label">Povp. napredek</div><div class="value">${Math.round(overview.avgGoalProgress)}%</div></div>
     <div class="stat-card"><div class="label">Navade</div><div class="value">${overview.totalHabits}</div></div>
+    <div class="stat-card"><div class="label">Stanje</div><div class="value ${overview.finance?.balance >= 0 ? 'accent' : 'danger'}">${formatEUR(overview.finance?.balance || 0)}</div></div>
     <div class="stat-card"><div class="label">Skupni streak</div><div class="value warm">${overview.totalStreak}🔥</div></div>
   `;
+
+  renderFinanceSummary('#finance-summary', overview.finance);
+
+  if (overview.charts) {
+    renderCharts(overview.charts);
+  }
 
   renderMiniList('#recent-plans', overview.recentPlans, '📋', 'Ni načrtov še');
   renderMiniList('#upcoming-plans', overview.upcomingPlans, '📅', 'Ni prihajajočih rokov');
@@ -403,12 +425,20 @@ function renderGoals() {
 
   el.innerHTML = goals.map((g) => {
     const badgeClass = g.status === 'completed' ? 'done' : g.status === 'paused' ? 'paused' : 'in_progress';
+    const isFinancial = g.kind === 'financial';
+    const progress = isFinancial && g.targetAmount > 0
+      ? Math.min(100, Math.round((g.currentAmount / g.targetAmount) * 100))
+      : g.progress;
     return `
       <div class="goal-card" data-id="${g.id}">
-        <h4>${esc(g.title)}</h4>
+        <div class="plan-card-header">
+          <h4>${esc(g.title)}</h4>
+          ${isFinancial ? '<span class="goal-financial-tag">💰 Finančni</span>' : ''}
+        </div>
         ${g.description ? `<p class="goal-desc">${esc(g.description)}</p>` : ''}
-        <div class="progress-label"><span>Napredek</span><span>${g.progress}%</span></div>
-        <div class="progress-bar"><div class="progress-fill" style="width:${g.progress}%"></div></div>
+        ${isFinancial ? `<div class="progress-label"><span>Privarčevano</span><span>${formatEUR(g.currentAmount)} / ${formatEUR(g.targetAmount)}</span></div>` : ''}
+        <div class="progress-label"><span>Napredek</span><span>${progress}%</span></div>
+        <div class="progress-bar"><div class="progress-fill" style="width:${Math.min(100, progress)}%"></div></div>
         <div class="plan-meta">
           <span class="badge badge-${badgeClass}">${LABELS.goalStatus[g.status]}</span>
           ${g.targetDate ? `<span class="badge">${formatDate(g.targetDate)}</span>` : ''}
@@ -466,6 +496,14 @@ function openModal(type, id = null) {
   } else if (type === 'habits') {
     $('#modal-title').textContent = id ? 'Uredi navado' : 'Nova navada';
     form.innerHTML = habitFormHTML(id ? habits.find((h) => h.id === id) : null);
+  } else if (type === 'finance') {
+    $('#modal-title').textContent = id ? 'Uredi transakcijo' : 'Nova transakcija';
+    form.innerHTML = transactionFormHTML(id ? transactions.find((t) => t.id === id) : null);
+    updateTxCategories();
+    if (id) {
+      const tx = transactions.find((t) => t.id === id);
+      if (tx) $('#f-tx-category').value = tx.category;
+    }
   }
 
   $('#modal-overlay').hidden = false;
@@ -530,15 +568,33 @@ function collectTasksFromEditor() {
 }
 
 function goalFormHTML(goal) {
+  const isFinancial = goal?.kind === 'financial';
   return `
     <div class="form-group"><label for="f-title">Naslov *</label><input class="form-input" id="f-title" required value="${esc(goal?.title || '')}"></div>
     <div class="form-group"><label for="f-desc">Opis</label><textarea class="form-textarea" id="f-desc">${esc(goal?.description || '')}</textarea></div>
-    <div class="form-row">
-      <div class="form-group"><label for="f-progress">Napredek (%)</label><input class="form-input" type="number" id="f-progress" min="0" max="100" value="${goal?.progress ?? 0}"></div>
-      <div class="form-group"><label for="f-target">Ciljni datum</label><input class="form-input" type="date" id="f-target" value="${goal?.targetDate || ''}"></div>
+    <div class="form-group">
+      <label for="f-kind">Tip cilja</label>
+      <select class="form-select" id="f-kind" onchange="toggleGoalKindFields()">
+        <option value="manual" ${!isFinancial ? 'selected' : ''}>Ročni napredek</option>
+        <option value="financial" ${isFinancial ? 'selected' : ''}>Finančni (dinamičen)</option>
+      </select>
     </div>
+    <div id="goal-manual-fields" ${isFinancial ? 'hidden' : ''}>
+      <div class="form-group"><label for="f-progress">Napredek (%)</label><input class="form-input" type="number" id="f-progress" min="0" max="100" value="${goal?.progress ?? 0}"></div>
+    </div>
+    <div id="goal-financial-fields" ${isFinancial ? '' : 'hidden'}>
+      <div class="form-group"><label for="f-target-amount">Ciljni znesek (€)</label><input class="form-input" type="number" id="f-target-amount" min="0" step="0.01" value="${goal?.targetAmount || ''}"></div>
+      <p style="font-size:0.82rem;color:var(--text-muted)">Napredek se avtomatsko posodablja iz transakcij, povezanih s tem ciljem.</p>
+    </div>
+    <div class="form-group"><label for="f-target">Ciljni datum</label><input class="form-input" type="date" id="f-target" value="${goal?.targetDate || ''}"></div>
     <div class="form-group"><label for="f-gstatus">Status</label><select class="form-select" id="f-gstatus">${selectOptions(LABELS.goalStatus, goal?.status || 'active')}</select></div>`;
 }
+
+window.toggleGoalKindFields = () => {
+  const kind = $('#f-kind').value;
+  $('#goal-manual-fields').hidden = kind === 'financial';
+  $('#goal-financial-fields').hidden = kind !== 'financial';
+};
 
 function habitFormHTML(habit) {
   return `
@@ -572,13 +628,19 @@ async function handleFormSubmit(e) {
         toast('Načrt dodan');
       }
     } else if (currentView === 'goals') {
+      const kind = $('#f-kind').value;
       const body = {
         title: $('#f-title').value,
         description: $('#f-desc').value,
-        progress: parseInt($('#f-progress').value, 10) || 0,
+        kind,
         targetDate: $('#f-target').value,
         status: $('#f-gstatus').value,
       };
+      if (kind === 'financial') {
+        body.targetAmount = parseFloat($('#f-target-amount').value) || 0;
+      } else {
+        body.progress = parseInt($('#f-progress').value, 10) || 0;
+      }
       if (editingId) {
         await fetchJSON(`${API}/goals/${editingId}`, { method: 'PATCH', body: JSON.stringify(body) });
         toast('Cilj posodobljen');
@@ -594,6 +656,22 @@ async function handleFormSubmit(e) {
       } else {
         await fetchJSON(`${API}/habits`, { method: 'POST', body: JSON.stringify(body) });
         toast('Navada dodana');
+      }
+    } else if (currentView === 'finance') {
+      const body = {
+        type: $('#f-tx-type').value,
+        amount: parseFloat($('#f-amount').value),
+        category: $('#f-tx-category').value,
+        description: $('#f-tx-desc').value,
+        date: $('#f-tx-date').value,
+        goalId: $('#f-tx-goal').value,
+      };
+      if (editingId) {
+        await fetchJSON(`${API}/transactions/${editingId}`, { method: 'PATCH', body: JSON.stringify(body) });
+        toast('Transakcija posodobljena');
+      } else {
+        await fetchJSON(`${API}/transactions`, { method: 'POST', body: JSON.stringify(body) });
+        toast('Transakcija dodana');
       }
     }
     closeModal();
@@ -691,6 +769,109 @@ async function undoHabitDone(id) {
   } catch (err) {
     toast(err.message, true);
   }
+}
+
+function renderFinanceSummary(selector, finance) {
+  const el = $(selector);
+  if (!el || !finance) return;
+  el.innerHTML = `
+    <div class="finance-card"><div class="label">Stanje</div><div class="amount ${finance.balance >= 0 ? 'positive' : 'negative'}">${formatEUR(finance.balance)}</div></div>
+    <div class="finance-card"><div class="label">Prihodki (mesec)</div><div class="amount positive">${formatEUR(finance.monthIncome)}</div></div>
+    <div class="finance-card"><div class="label">Odhodki (mesec)</div><div class="amount negative">${formatEUR(finance.monthExpense)}</div></div>
+    <div class="finance-card"><div class="label">Bilanca (mesec)</div><div class="amount ${finance.monthBalance >= 0 ? 'positive' : 'negative'}">${formatEUR(finance.monthBalance)}</div></div>
+  `;
+}
+
+function renderFinance() {
+  const finance = overview?.finance;
+  renderFinanceSummary('#finance-hero', finance);
+
+  if (overview?.charts) {
+    renderCharts(overview.charts, '');
+  }
+
+  renderTransactions();
+}
+
+function renderTransactions() {
+  const el = $('#transactions-list');
+  if (!el) return;
+
+  const typeFilter = $('#finance-filter-type')?.value || '';
+  const filtered = transactions.filter((t) => !typeFilter || t.type === typeFilter);
+
+  if (!filtered.length) {
+    el.innerHTML = '<div class="empty-state"><span>💰</span>Ni transakcij. Dodaj prvo!</div>';
+    return;
+  }
+
+  el.innerHTML = filtered.map((t) => `
+    <div class="transaction-item">
+      <div class="transaction-icon ${t.type}">${t.type === 'income' ? '↑' : '↓'}</div>
+      <div class="transaction-info">
+        <div class="title">${esc(t.description || LABELS.financeCat[t.category])}</div>
+        <div class="meta">${LABELS.financeCat[t.category]} · ${formatDate(t.date)}${t.goalId ? ' · 🎯 Cilj' : ''}</div>
+      </div>
+      <div class="transaction-amount ${t.type}">${t.type === 'income' ? '+' : '-'}${formatEUR(t.amount)}</div>
+      <button class="btn btn-sm btn-ghost" data-action="edit-transaction" data-id="${t.id}">Uredi</button>
+      <button class="btn btn-sm btn-danger" data-action="delete-transaction" data-id="${t.id}">×</button>
+    </div>
+  `).join('');
+}
+
+function transactionFormHTML(tx) {
+  const financialGoals = goals.filter((g) => g.kind === 'financial');
+  const type = tx?.type || 'expense';
+  return `
+    <div class="form-row">
+      <div class="form-group">
+        <label for="f-tx-type">Tip</label>
+        <select class="form-select" id="f-tx-type" onchange="updateTxCategories()">
+          <option value="income" ${type === 'income' ? 'selected' : ''}>Prihodek</option>
+          <option value="expense" ${type === 'expense' ? 'selected' : ''}>Odhodek</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="f-amount">Znesek (€) *</label>
+        <input class="form-input" type="number" id="f-amount" min="0.01" step="0.01" required value="${tx?.amount || ''}">
+      </div>
+    </div>
+    <div class="form-group">
+      <label for="f-tx-category">Kategorija</label>
+      <select class="form-select" id="f-tx-category"></select>
+    </div>
+    <div class="form-group"><label for="f-tx-desc">Opis</label><input class="form-input" id="f-tx-desc" value="${esc(tx?.description || '')}"></div>
+    <div class="form-group"><label for="f-tx-date">Datum</label><input class="form-input" type="date" id="f-tx-date" value="${tx?.date || localDateStr()}"></div>
+    <div class="form-group">
+      <label for="f-tx-goal">Povezan finančni cilj (opcijsko)</label>
+      <select class="form-select" id="f-tx-goal">
+        <option value="">— Brez —</option>
+        ${financialGoals.map((g) => `<option value="${g.id}" ${tx?.goalId === g.id ? 'selected' : ''}>${esc(g.title)}</option>`).join('')}
+      </select>
+    </div>`;
+}
+
+window.updateTxCategories = () => {
+  const type = $('#f-tx-type').value;
+  const cats = type === 'income'
+    ? { salary: 'Plača', freelance: 'Freelance', investment: 'Naložbe', other: 'Ostalo' }
+    : { food: 'Hrana', transport: 'Prevoz', housing: 'Stanovanje', entertainment: 'Zabava', health: 'Zdravje', shopping: 'Nakupi', other: 'Ostalo' };
+  $('#f-tx-category').innerHTML = Object.entries(cats).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+};
+
+async function deleteTransaction(id) {
+  if (!confirm('Res želiš izbrisati to transakcijo?')) return;
+  try {
+    await fetchJSON(`${API}/transactions/${id}`, { method: 'DELETE' });
+    toast('Transakcija izbrisana');
+    await refreshAll();
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+function formatEUR(amount) {
+  return new Intl.NumberFormat('sl-SI', { style: 'currency', currency: 'EUR' }).format(amount || 0);
 }
 
 function nextStatusLabel(status) {

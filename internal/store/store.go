@@ -30,10 +30,12 @@ func New(path string) (*Store, error) {
 	s := &Store{
 		path: path,
 		data: models.DataStore{
-			Version: models.DataStoreVersion,
-			Plans:   []models.Plan{},
-			Goals:   []models.Goal{},
-			Habits:  []models.Habit{},
+			Version:      models.DataStoreVersion,
+			Plans:        []models.Plan{},
+			Goals:        []models.Goal{},
+			Habits:       []models.Habit{},
+			Transactions: []models.Transaction{},
+			Finance:      models.FinanceSettings{},
 		},
 	}
 
@@ -89,6 +91,21 @@ func (s *Store) normalizeData() {
 	}
 	if s.data.Habits == nil {
 		s.data.Habits = []models.Habit{}
+	}
+	if s.data.Transactions == nil {
+		s.data.Transactions = []models.Transaction{}
+	}
+	if s.data.Version < models.DataStoreVersion {
+		s.data.Version = models.DataStoreVersion
+	}
+	for i := range s.data.Goals {
+		if s.data.Goals[i].Kind == "" {
+			if s.data.Goals[i].TargetAmount > 0 {
+				s.data.Goals[i].Kind = models.GoalKindFinancial
+			} else {
+				s.data.Goals[i].Kind = models.GoalKindManual
+			}
+		}
 	}
 }
 
@@ -212,7 +229,7 @@ func (s *Store) GetGoal(id string) (models.Goal, error) {
 
 	for _, g := range s.data.Goals {
 		if g.ID == id {
-			return g, nil
+			return s.enrichGoalLocked(g), nil
 		}
 	}
 
@@ -224,7 +241,9 @@ func (s *Store) ListGoals() []models.Goal {
 	defer s.mu.RUnlock()
 
 	out := make([]models.Goal, len(s.data.Goals))
-	copy(out, s.data.Goals)
+	for i, g := range s.data.Goals {
+		out[i] = s.enrichGoalLocked(g)
+	}
 	return out
 }
 
@@ -453,10 +472,11 @@ func (s *Store) Overview(today string) models.Overview {
 	}
 
 	for _, g := range s.data.Goals {
+		enriched := s.enrichGoalLocked(g)
 		overview.TotalGoals++
-		overview.AvgGoalProgress += float64(g.Progress)
+		overview.AvgGoalProgress += float64(enriched.Progress)
 
-		switch g.Status {
+		switch enriched.Status {
 		case models.GoalStatusActive:
 			overview.ActiveGoals++
 		case models.GoalStatusCompleted:
@@ -474,6 +494,9 @@ func (s *Store) Overview(today string) models.Overview {
 	for _, h := range s.data.Habits {
 		overview.TotalStreak += validate.EffectiveHabitStreak(h, today)
 	}
+
+	overview.Finance = s.financeStatsLocked(today)
+	overview.Charts = s.buildChartsLocked(today)
 
 	return overview
 }
