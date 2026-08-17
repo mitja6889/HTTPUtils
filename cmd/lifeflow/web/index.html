@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="sl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LifeFlow — Produktivnost &amp; Življenjski načrt</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-icon">🌿</span>
+        <div>
+          <h1>LifeFlow</h1>
+          <p>Živi namerno</p>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-item active" data-view="overview">
+          <span class="nav-icon">📊</span>
+          Pregled
+        </button>
+        <button class="nav-item" data-view="plans">
+          <span class="nav-icon">📋</span>
+          Načrti
+        </button>
+        <button class="nav-item" data-view="goals">
+          <span class="nav-icon">🎯</span>
+          Cilji
+        </button>
+        <button class="nav-item" data-view="habits">
+          <span class="nav-icon">🔥</span>
+          Navade
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <p id="today-date"></p>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <h2 id="view-title">Pregled</h2>
+          <p id="view-subtitle">Tvoj dnevni povzetek produktivnosti</p>
+        </div>
+        <button class="btn btn-primary" id="add-btn" hidden>
+          <span>+</span> Dodaj
+        </button>
+      </header>
+
+      <!-- OVERVIEW -->
+      <section id="view-overview" class="view active">
+        <div class="stats-grid" id="stats-grid"></div>
+
+        <div class="overview-grid">
+          <div class="card">
+            <div class="card-header">
+              <h3>Nedavni načrti</h3>
+            </div>
+            <div class="card-body" id="recent-plans"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>Prihajajoči roki</h3>
+            </div>
+            <div class="card-body" id="upcoming-plans"></div>
+          </div>
+
+          <div class="card wide">
+            <div class="card-header">
+              <h3>Razporeditev po kategorijah</h3>
+            </div>
+            <div class="card-body">
+              <div class="category-bars" id="category-bars"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- PLANS -->
+      <section id="view-plans" class="view">
+        <div class="filters">
+          <input type="search" id="plan-search" placeholder="Išči načrte..." class="search-input">
+          <select id="plan-filter-status" class="select">
+            <option value="">Vsi statusi</option>
+            <option value="todo">Za narediti</option>
+            <option value="in_progress">V teku</option>
+            <option value="done">Končano</option>
+          </select>
+          <select id="plan-filter-category" class="select">
+            <option value="">Vse kategorije</option>
+            <option value="work">Delo</option>
+            <option value="health">Zdravje</option>
+            <option value="personal">Osebno</option>
+            <option value="learning">Učenje</option>
+            <option value="other">Ostalo</option>
+          </select>
+        </div>
+        <div class="plans-grid" id="plans-list"></div>
+      </section>
+
+      <!-- GOALS -->
+      <section id="view-goals" class="view">
+        <div class="goals-grid" id="goals-list"></div>
+      </section>
+
+      <!-- HABITS -->
+      <section id="view-habits" class="view">
+        <div class="habits-grid" id="habits-list"></div>
+      </section>
+    </main>
+  </div>
+
+  <!-- MODAL -->
+  <div class="modal-overlay" id="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal-header">
+        <h3 id="modal-title">Dodaj</h3>
+        <button class="btn-icon" id="modal-close" aria-label="Zapri">&times;</button>
+      </div>
+      <form id="modal-form" class="modal-body"></form>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" id="modal-cancel">Prekliči</button>
+        <button type="submit" form="modal-form" class="btn btn-primary" id="modal-submit">Shrani</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toast-container"></div>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>
