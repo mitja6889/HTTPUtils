@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="sl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#1a2e1f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>LifeFlow — Produktivnost &amp; Življenjski načrt</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div id="loading" class="loading-overlay" hidden>
+    <div class="loading-spinner"></div>
+    <p>Nalagam...</p>
+  </div>
+
+  <div class="app">
+    <header class="mobile-header">
+      <div class="mobile-header-left">
+        <span class="brand-icon">🌿</span>
+        <div>
+          <h1 id="mobile-title">Pregled</h1>
+          <p id="mobile-date"></p>
+        </div>
+      </div>
+      <button class="btn btn-primary btn-icon-mobile" id="mobile-add-btn" hidden aria-label="Dodaj">+</button>
+    </header>
+
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-icon">🌿</span>
+        <div>
+          <h1>LifeFlow</h1>
+          <p>Živi namerno</p>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-item active" data-view="overview">
+          <span class="nav-icon">📊</span>
+          Pregled
+        </button>
+        <button class="nav-item" data-view="plans">
+          <span class="nav-icon">📋</span>
+          Načrti
+        </button>
+        <button class="nav-item" data-view="finance">
+          <span class="nav-icon">💰</span>
+          Finance
+        </button>
+        <button class="nav-item" data-view="goals">
+          <span class="nav-icon">🎯</span>
+          Cilji
+        </button>
+        <button class="nav-item" data-view="habits">
+          <span class="nav-icon">🔥</span>
+          Navade
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <p id="today-date"></p>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <h2 id="view-title">Pregled</h2>
+          <p id="view-subtitle">Tvoj dnevni povzetek produktivnosti</p>
+        </div>
+        <button class="btn btn-primary" id="add-btn" hidden>
+          <span>+</span> Dodaj
+        </button>
+      </header>
+
+      <!-- OVERVIEW -->
+      <section id="view-overview" class="view active">
+        <div class="stats-grid" id="stats-grid"></div>
+
+        <div class="finance-summary" id="finance-summary"></div>
+
+        <button type="button" class="mobile-section-toggle" id="charts-toggle" aria-expanded="false">
+          <span>Grafi & statistika</span>
+          <span class="toggle-chevron">▼</span>
+        </button>
+        <div class="charts-grid mobile-collapsible" id="charts-section" hidden>
+          <div class="card">
+            <div class="card-header"><h3>Načrti po statusu</h3></div>
+            <div class="card-body chart-wrap"><canvas id="chart-plans"></canvas></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h3>Napredek ciljev</h3></div>
+            <div class="card-body chart-wrap"><canvas id="chart-goals"></canvas></div>
+          </div>
+          <div class="card wide">
+            <div class="card-header"><h3>Finance — prihodki & odhodki</h3></div>
+            <div class="card-body chart-wrap"><canvas id="chart-finance"></canvas></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h3>Odhodki po kategorijah</h3></div>
+            <div class="card-body chart-wrap"><canvas id="chart-expenses"></canvas></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h3>Navade — streaki</h3></div>
+            <div class="card-body chart-wrap"><canvas id="chart-habits"></canvas></div>
+          </div>
+        </div>
+
+        <div class="overview-grid">
+          <div class="card">
+            <div class="card-header">
+              <h3>Nedavni načrti</h3>
+            </div>
+            <div class="card-body" id="recent-plans"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>Prihajajoči roki</h3>
+            </div>
+            <div class="card-body" id="upcoming-plans"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>Z zamudo</h3>
+            </div>
+            <div class="card-body" id="overdue-plans"></div>
+          </div>
+
+          <div class="card wide">
+            <div class="card-header">
+              <h3>Razporeditev po kategorijah</h3>
+            </div>
+            <div class="card-body">
+              <div class="category-bars" id="category-bars"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- PLANS -->
+      <section id="view-plans" class="view">
+        <div class="week-nav" id="week-nav"></div>
+        <div class="filters">
+          <input type="search" id="plan-search" placeholder="Išči načrte..." class="search-input">
+          <div class="filter-row">
+            <select id="plan-filter-view" class="select">
+              <option value="day">Po dnevu</option>
+              <option value="all">Vsi načrti</option>
+              <option value="overdue">Z zamudo</option>
+            </select>
+            <select id="plan-filter-status" class="select">
+              <option value="">Vsi statusi</option>
+              <option value="todo">Za narediti</option>
+              <option value="in_progress">V teku</option>
+              <option value="done">Končano</option>
+            </select>
+            <select id="plan-filter-category" class="select">
+              <option value="">Vse kategorije</option>
+              <option value="work">Delo</option>
+              <option value="health">Zdravje</option>
+              <option value="personal">Osebno</option>
+              <option value="learning">Učenje</option>
+              <option value="other">Ostalo</option>
+            </select>
+          </div>
+        </div>
+        <div id="plans-list"></div>
+      </section>
+
+      <!-- FINANCE -->
+      <section id="view-finance" class="view">
+        <div class="finance-hero" id="finance-hero"></div>
+        <div class="charts-grid">
+          <div class="card wide">
+            <div class="card-header"><h3>Mesečni trend</h3></div>
+            <div class="card-body chart-wrap"><canvas id="chart-finance-detail"></canvas></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h3>Odhodki po kategorijah</h3></div>
+            <div class="card-body chart-wrap"><canvas id="chart-expenses-detail"></canvas></div>
+          </div>
+        </div>
+        <div class="filters">
+          <select id="finance-filter-type" class="select">
+            <option value="">Vsi</option>
+            <option value="income">Prihodki</option>
+            <option value="expense">Odhodki</option>
+          </select>
+        </div>
+        <div id="transactions-list"></div>
+      </section>
+
+      <!-- GOALS -->
+      <section id="view-goals" class="view">
+        <div class="goals-grid" id="goals-list"></div>
+      </section>
+
+      <!-- HABITS -->
+      <section id="view-habits" class="view">
+        <div class="habits-grid" id="habits-list"></div>
+      </section>
+    </main>
+  </div>
+
+  <!-- MODAL -->
+  <div class="modal-overlay" id="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-header">
+        <h3 id="modal-title">Dodaj</h3>
+        <button type="button" class="btn-icon" id="modal-close" aria-label="Zapri">&times;</button>
+      </div>
+      <form id="modal-form" class="modal-form" novalidate>
+        <div class="modal-body" id="modal-fields"></div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" id="modal-cancel">Prekliči</button>
+          <button type="submit" class="btn btn-primary" id="modal-submit">Shrani</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toast-container"></div>
+
+  <nav class="bottom-nav" aria-label="Glavna navigacija">
+    <button class="bottom-nav-item active" data-view="overview">
+      <span class="bottom-nav-icon">📊</span>
+      <span class="bottom-nav-label">Domov</span>
+    </button>
+    <button class="bottom-nav-item" data-view="plans">
+      <span class="bottom-nav-icon">📋</span>
+      <span class="bottom-nav-label">Načrti</span>
+    </button>
+    <button class="bottom-nav-item" data-view="finance">
+      <span class="bottom-nav-icon">💰</span>
+      <span class="bottom-nav-label">Finance</span>
+    </button>
+    <button class="bottom-nav-item" data-view="more" id="more-nav-btn">
+      <span class="bottom-nav-icon">☰</span>
+      <span class="bottom-nav-label">Več</span>
+    </button>
+  </nav>
+
+  <div class="more-sheet" id="more-sheet" hidden>
+    <div class="more-sheet-backdrop" data-action="close-more"></div>
+    <div class="more-sheet-panel">
+      <h3>Več</h3>
+      <button type="button" class="more-sheet-item" data-view="goals">
+        <span>🎯</span> Cilji
+      </button>
+      <button type="button" class="more-sheet-item" data-view="habits">
+        <span>🔥</span> Navade
+      </button>
+    </div>
+  </div>
+
+  <button class="fab" id="fab-add" hidden aria-label="Dodaj">+</button>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="/js/charts.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>
