@@ -214,13 +214,15 @@
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <div class="modal-header">
         <h3 id="modal-title">Dodaj</h3>
-        <button class="btn-icon" id="modal-close" aria-label="Zapri">&times;</button>
+        <button type="button" class="btn-icon" id="modal-close" aria-label="Zapri">&times;</button>
       </div>
-      <form id="modal-form" class="modal-body"></form>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-ghost" id="modal-cancel">Prekliči</button>
-        <button type="submit" form="modal-form" class="btn btn-primary" id="modal-submit">Shrani</button>
-      </div>
+      <form id="modal-form" class="modal-form" novalidate>
+        <div class="modal-body" id="modal-fields"></div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" id="modal-cancel">Prekliči</button>
+          <button type="submit" class="btn btn-primary" id="modal-submit">Shrani</button>
+        </div>
+      </form>
     </div>
   </div>
 

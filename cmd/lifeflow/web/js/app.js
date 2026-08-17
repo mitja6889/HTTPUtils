@@ -34,6 +34,7 @@ let editingId = null;
 let selectedWeekDay = localDateStr();
 let planViewMode = 'day';
 let modalTasks = [];
+let modalType = null;
 let loadError = null;
 
 const $ = (sel) => document.querySelector(sel);
@@ -544,24 +545,26 @@ function renderHabits() {
 }
 
 function openModal(type, id = null) {
+  closeMoreSheet();
   editingId = id;
-  const form = $('#modal-form');
-  form.innerHTML = '';
+  modalType = type;
+  const fields = $('#modal-fields');
+  fields.innerHTML = '';
 
   if (type === 'plans') {
     $('#modal-title').textContent = id ? 'Uredi načrt' : 'Nov načrt';
     const plan = id ? plans.find((p) => p.id === id) : null;
     modalTasks = plan?.tasks ? plan.tasks.map((t) => ({ ...t })) : [];
-    form.innerHTML = planFormHTML(plan);
+    fields.innerHTML = planFormHTML(plan);
   } else if (type === 'goals') {
     $('#modal-title').textContent = id ? 'Uredi cilj' : 'Nov cilj';
-    form.innerHTML = goalFormHTML(id ? goals.find((g) => g.id === id) : null);
+    fields.innerHTML = goalFormHTML(id ? goals.find((g) => g.id === id) : null);
   } else if (type === 'habits') {
     $('#modal-title').textContent = id ? 'Uredi navado' : 'Nova navada';
-    form.innerHTML = habitFormHTML(id ? habits.find((h) => h.id === id) : null);
+    fields.innerHTML = habitFormHTML(id ? habits.find((h) => h.id === id) : null);
   } else if (type === 'finance') {
     $('#modal-title').textContent = id ? 'Uredi transakcijo' : 'Nova transakcija';
-    form.innerHTML = transactionFormHTML(id ? transactions.find((t) => t.id === id) : null);
+    fields.innerHTML = transactionFormHTML(id ? transactions.find((t) => t.id === id) : null);
     updateTxCategories();
     if (id) {
       const tx = transactions.find((t) => t.id === id);
@@ -571,12 +574,17 @@ function openModal(type, id = null) {
 
   $('#modal-overlay').hidden = false;
   document.body.classList.add('modal-open');
+  requestAnimationFrame(() => {
+    const first = fields.querySelector('input, textarea, select');
+    if (first && window.matchMedia('(max-width: 900px)').matches) first.focus({ preventScroll: true });
+  });
 }
 
 function closeModal() {
   $('#modal-overlay').hidden = true;
   document.body.classList.remove('modal-open');
   editingId = null;
+  modalType = null;
   modalTasks = [];
 }
 
@@ -673,7 +681,8 @@ async function handleFormSubmit(e) {
   e.preventDefault();
   setLoading(true);
   try {
-    if (currentView === 'plans') {
+    const type = modalType || currentView;
+    if (type === 'plans') {
       const body = {
         title: $('#f-title').value,
         description: $('#f-desc').value,
@@ -690,7 +699,7 @@ async function handleFormSubmit(e) {
         await fetchJSON(`${API}/plans`, { method: 'POST', body: JSON.stringify(body) });
         toast('Načrt dodan');
       }
-    } else if (currentView === 'goals') {
+    } else if (type === 'goals') {
       const kind = $('#f-kind').value;
       const body = {
         title: $('#f-title').value,
@@ -711,7 +720,7 @@ async function handleFormSubmit(e) {
         await fetchJSON(`${API}/goals`, { method: 'POST', body: JSON.stringify(body) });
         toast('Cilj dodan');
       }
-    } else if (currentView === 'habits') {
+    } else if (type === 'habits') {
       const body = { name: $('#f-name').value, icon: $('#f-icon').value };
       if (editingId) {
         await fetchJSON(`${API}/habits/${editingId}`, { method: 'PATCH', body: JSON.stringify(body) });
@@ -720,7 +729,7 @@ async function handleFormSubmit(e) {
         await fetchJSON(`${API}/habits`, { method: 'POST', body: JSON.stringify(body) });
         toast('Navada dodana');
       }
-    } else if (currentView === 'finance') {
+    } else if (type === 'finance') {
       const body = {
         type: $('#f-tx-type').value,
         amount: parseFloat($('#f-amount').value),
