@@ -783,6 +783,82 @@ body {
   color: var(--text);
 }
 
+.form-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin: -2px 0 10px;
+  line-height: 1.4;
+}
+
+.plan-day-picker {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 0 10px;
+  margin-bottom: 10px;
+  scrollbar-width: none;
+}
+
+.plan-day-picker::-webkit-scrollbar {
+  display: none;
+}
+
+.plan-day-chip {
+  flex: 0 0 auto;
+  min-width: 56px;
+  padding: 8px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  text-align: center;
+  cursor: pointer;
+  touch-action: manipulation;
+  font-family: var(--font);
+  color: var(--text);
+}
+
+.plan-day-chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.plan-day-chip.today:not(.active) {
+  border-color: var(--accent);
+}
+
+.plan-day-chip-name {
+  display: block;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.plan-day-chip-num {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.plan-day-extra {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.plan-day-extra .form-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.badge-series {
+  background: var(--warm-light);
+  color: var(--warm);
+}
+
 .form-input, .form-textarea, .form-select {
   width: 100%;
 }

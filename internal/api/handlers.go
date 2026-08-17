@@ -3,6 +3,7 @@ package api
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -75,9 +76,7 @@ func (a *API) handlePlanByID(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		plan, err := a.store.UpdatePlan(id, func(p *models.Plan) error {
-			return applyPlanUpdate(p, input)
-		})
+		plan, err := a.updatePlan(id, input)
 		if err != nil {
 			a.writeStoreError(w, err)
 			return
@@ -350,6 +349,7 @@ type createPlanInput struct {
 	Priority    models.Priority   `json:"priority"`
 	Status      models.PlanStatus `json:"status"`
 	DueDate     string            `json:"dueDate"`
+	DueDates    []string          `json:"dueDates"`
 	Tasks       []models.Task     `json:"tasks"`
 }
 
@@ -360,6 +360,7 @@ type updatePlanInput struct {
 	Priority    *models.Priority   `json:"priority"`
 	Status      *models.PlanStatus `json:"status"`
 	DueDate     *string            `json:"dueDate"`
+	DueDates    []string           `json:"dueDates"`
 	Tasks       *[]models.Task     `json:"tasks"`
 }
 
@@ -430,6 +431,9 @@ func (a *API) createPlan(input createPlanInput) (models.Plan, error) {
 	if err := validate.Date(input.DueDate); err != nil {
 		return models.Plan{}, err
 	}
+	if err := validate.Dates(input.DueDates); err != nil {
+		return models.Plan{}, err
+	}
 
 	now := models.NowISO()
 	plan := models.Plan{
@@ -445,7 +449,80 @@ func (a *API) createPlan(input createPlanInput) (models.Plan, error) {
 		UpdatedAt:   now,
 	}
 
+	dates := input.DueDates
+	if len(dates) == 0 && input.DueDate != "" {
+		dates = []string{input.DueDate}
+	}
+	if len(dates) > 1 {
+		created, err := a.store.CreatePlansFromTemplate(plan, dates)
+		if err != nil {
+			return models.Plan{}, err
+		}
+		if len(created) == 0 {
+			return models.Plan{}, errors.New("no plans created")
+		}
+		return created[0], nil
+	}
+
 	return a.store.CreatePlan(plan)
+}
+
+func (a *API) updatePlan(id string, input updatePlanInput) (models.Plan, error) {
+	if len(input.DueDates) > 0 {
+		return a.store.UpdatePlanAndSeries(
+			id,
+			input.DueDates,
+			func(p *models.Plan) error {
+				return applyPlanSharedUpdate(p, input)
+			},
+			func(p *models.Plan) error {
+				return applyPlanInstanceUpdate(p, input)
+			},
+		)
+	}
+
+	return a.store.UpdatePlan(id, func(p *models.Plan) error {
+		return applyPlanUpdate(p, input)
+	})
+}
+
+func applyPlanSharedUpdate(p *models.Plan, input updatePlanInput) error {
+	if input.Title != nil {
+		title, err := validate.Title(*input.Title)
+		if err != nil {
+			return err
+		}
+		p.Title = title
+	}
+	if input.Description != nil {
+		p.Description = strings.TrimSpace(*input.Description)
+	}
+	if input.Category != nil {
+		if err := validate.Category(*input.Category); err != nil {
+			return err
+		}
+		p.Category = *input.Category
+	}
+	if input.Priority != nil {
+		if err := validate.Priority(*input.Priority); err != nil {
+			return err
+		}
+		p.Priority = *input.Priority
+	}
+	return nil
+}
+
+func applyPlanInstanceUpdate(p *models.Plan, input updatePlanInput) error {
+	if input.Status != nil {
+		if err := validate.PlanStatus(*input.Status); err != nil {
+			return err
+		}
+		p.Status = *input.Status
+	}
+	if input.Tasks != nil {
+		p.Tasks = normalizeTasks(*input.Tasks, models.NowISO())
+	}
+	return nil
 }
 
 func applyPlanUpdate(p *models.Plan, input updatePlanInput) error {

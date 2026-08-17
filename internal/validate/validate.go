@@ -33,6 +33,15 @@ func Date(value string) error {
 	return nil
 }
 
+func Dates(values []string) error {
+	for _, value := range values {
+		if err := Date(value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func Category(value models.Category) error {
 	switch value {
 	case models.CategoryWork, models.CategoryHealth, models.CategoryPersonal, models.CategoryLearning, models.CategoryOther:

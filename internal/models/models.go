@@ -1,6 +1,10 @@
 package models
 
-import "time"
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"time"
+)
 
 type PlanStatus string
 
@@ -43,6 +47,7 @@ type Plan struct {
 	Priority    Priority   `json:"priority"`
 	Status      PlanStatus `json:"status"`
 	DueDate     string     `json:"dueDate,omitempty"`
+	SeriesID    string     `json:"seriesId,omitempty"`
 	Tasks       []Task     `json:"tasks"`
 	CreatedAt   string     `json:"createdAt"`
 	UpdatedAt   string     `json:"updatedAt"`
@@ -189,6 +194,14 @@ type Overview struct {
 
 func NowISO() string {
 	return time.Now().UTC().Format(time.RFC3339)
+}
+
+func NewID() string {
+	buf := make([]byte, 8)
+	if _, err := rand.Read(buf); err != nil {
+		return NowISO()
+	}
+	return hex.EncodeToString(buf)
 }
 
 func TodayDate() string {

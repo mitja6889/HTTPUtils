@@ -34,6 +34,7 @@ let editingId = null;
 let selectedWeekDay = localDateStr();
 let planViewMode = 'day';
 let financeStats = null;
+let modalPlanDays = new Set();
 let modalTasks = [];
 let modalType = null;
 let loadError = null;
@@ -166,6 +167,8 @@ function bindDelegatedActions() {
       case 'edit-transaction': openModal('finance', id); break;
       case 'toggle-task': await toggleTask(id, btn.dataset.taskId); break;
       case 'select-day': selectWeekDay(btn.dataset.date); break;
+      case 'toggle-plan-day': togglePlanDay(btn.dataset.date); break;
+      case 'add-plan-day': addPlanDay(); break;
       case 'retry-load': await loadView(currentView, { force: true }); break;
       case 'add-task-row': addTaskRow(); break;
       case 'remove-task-row': btn.closest('.task-editor-row')?.remove(); break;
@@ -585,6 +588,7 @@ function planCardHTML(p, today) {
         <span class="badge badge-cat-${p.category}">${LABELS.category[p.category]}</span>
         <span class="badge badge-priority-${p.priority}">${LABELS.priority[p.priority]}</span>
         ${p.dueDate ? `<span class="badge ${overdue ? 'badge-overdue' : ''}">${overdue ? '⚠ ' : ''}${formatDate(p.dueDate)}</span>` : ''}
+        ${p.seriesId ? '<span class="badge badge-series">Več dni</span>' : ''}
       </div>
       <div class="plan-actions">
         ${p.status !== 'done' ? `<button class="btn btn-sm btn-primary" data-action="cycle-status" data-id="${p.id}">${nextStatusLabel(p.status)}</button>` : ''}
@@ -671,6 +675,7 @@ async function openModal(type, id = null) {
     $('#modal-title').textContent = id ? 'Uredi načrt' : 'Nov načrt';
     const plan = id ? plans.find((p) => p.id === id) : null;
     modalTasks = plan?.tasks ? plan.tasks.map((t) => ({ ...t })) : [];
+    modalPlanDays = getPlanSeriesDates(plan);
     fields.innerHTML = planFormHTML(plan);
   } else if (type === 'goals') {
     $('#modal-title').textContent = id ? 'Uredi cilj' : 'Nov cilj';
@@ -703,6 +708,83 @@ function closeModal() {
   editingId = null;
   modalType = null;
   modalTasks = [];
+  modalPlanDays = new Set();
+}
+
+function getPlanSeriesDates(plan) {
+  if (!plan) {
+    const day = selectedWeekDay === 'overdue' ? localDateStr() : selectedWeekDay;
+    return new Set(day && day !== 'overdue' ? [day] : [localDateStr()]);
+  }
+  if (plan.seriesId) {
+    return new Set(
+      plans.filter((p) => p.seriesId === plan.seriesId && p.dueDate).map((p) => p.dueDate),
+    );
+  }
+  return new Set(plan.dueDate ? [plan.dueDate] : [localDateStr()]);
+}
+
+function planDayPickerHTML() {
+  const today = localDateStr();
+  const multi = modalPlanDays.size > 1;
+  let chips = '';
+  for (let i = 0; i < 14; i++) {
+    const dateStr = addDays(today, i);
+    const d = parseLocalDate(dateStr);
+    const active = modalPlanDays.has(dateStr);
+    chips += `
+      <button type="button" class="plan-day-chip ${active ? 'active' : ''} ${dateStr === today ? 'today' : ''}"
+        data-action="toggle-plan-day" data-date="${dateStr}">
+        <span class="plan-day-chip-name">${d.toLocaleDateString('sl-SI', { weekday: 'short' })}</span>
+        <span class="plan-day-chip-num">${d.getDate()}</span>
+      </button>`;
+  }
+
+  return `
+    <div class="form-group">
+      <label>Dnevi ${multi ? `(${modalPlanDays.size})` : ''}</label>
+      <p class="form-hint">Tapni več dni za enak načrt. Vsak dan ima svoj status in podnaloge.</p>
+      <div class="plan-day-picker" id="plan-day-picker">${chips}</div>
+      <div class="plan-day-extra">
+        <input class="form-input" type="date" id="f-due-extra">
+        <button type="button" class="btn btn-sm btn-ghost" data-action="add-plan-day">+ Dodaj datum</button>
+      </div>
+      ${editingId && multi ? '<p class="form-hint">Naslov, opis in kategorija se posodobijo na vseh izbranih dneh.</p>' : ''}
+    </div>`;
+}
+
+function togglePlanDay(dateStr) {
+  if (!dateStr) return;
+  if (modalPlanDays.has(dateStr)) {
+    if (modalPlanDays.size > 1) modalPlanDays.delete(dateStr);
+  } else {
+    modalPlanDays.add(dateStr);
+  }
+  const group = $('#plan-day-picker')?.closest('.form-group');
+  if (group) {
+    const label = group.querySelector('label');
+    const multi = modalPlanDays.size > 1;
+    if (label) label.textContent = multi ? `Dnevi (${modalPlanDays.size})` : 'Dnevi';
+  }
+  refreshPlanDayPicker();
+}
+
+function addPlanDay() {
+  const dateStr = $('#f-due-extra')?.value;
+  if (!dateStr) return;
+  modalPlanDays.add(dateStr);
+  $('#f-due-extra').value = '';
+  refreshPlanDayPicker();
+}
+
+function refreshPlanDayPicker() {
+  $$('#plan-day-picker [data-action="toggle-plan-day"]').forEach((btn) => {
+    btn.classList.toggle('active', modalPlanDays.has(btn.dataset.date));
+  });
+}
+
+function collectPlanDays() {
+  return [...modalPlanDays].sort();
 }
 
 function planFormHTML(plan) {
@@ -713,10 +795,8 @@ function planFormHTML(plan) {
       <div class="form-group"><label for="f-category">Kategorija</label><select class="form-select" id="f-category">${selectOptions(LABELS.category, plan?.category || 'personal')}</select></div>
       <div class="form-group"><label for="f-priority">Prioriteta</label><select class="form-select" id="f-priority">${selectOptions(LABELS.priority, plan?.priority || 'medium')}</select></div>
     </div>
-    <div class="form-row">
-      <div class="form-group"><label for="f-status">Status</label><select class="form-select" id="f-status">${selectOptions(LABELS.status, plan?.status || 'todo')}</select></div>
-      <div class="form-group"><label for="f-due">Rok</label><input class="form-input" type="date" id="f-due" value="${plan?.dueDate || (selectedWeekDay === 'overdue' ? localDateStr() : selectedWeekDay)}"></div>
-    </div>
+    <div class="form-group"><label for="f-status">Status</label><select class="form-select" id="f-status">${selectOptions(LABELS.status, plan?.status || 'todo')}</select></div>
+    ${planDayPickerHTML()}
     <div class="form-group">
       <label>Podnaloge</label>
       <div class="tasks-editor" id="tasks-editor">${renderTaskEditorRows()}</div>
@@ -800,13 +880,19 @@ async function handleFormSubmit(e) {
   try {
     const type = modalType || currentView;
     if (type === 'plans') {
+      const dueDates = collectPlanDays();
+      if (!dueDates.length) {
+        toast('Izberi vsaj en dan', true);
+        setLoading(false);
+        return;
+      }
       const body = {
         title: $('#f-title').value,
         description: $('#f-desc').value,
         category: $('#f-category').value,
         priority: $('#f-priority').value,
         status: $('#f-status').value,
-        dueDate: $('#f-due').value,
+        dueDates,
         tasks: collectTasksFromEditor(),
       };
       if (editingId) {
