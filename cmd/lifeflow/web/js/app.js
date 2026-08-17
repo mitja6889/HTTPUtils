@@ -33,9 +33,26 @@ let overview = null;
 let editingId = null;
 let selectedWeekDay = localDateStr();
 let planViewMode = 'day';
+let financeStats = null;
 let modalTasks = [];
 let modalType = null;
 let loadError = null;
+
+const viewState = {
+  overview: { loaded: false, loading: false },
+  plans: { loaded: false, loading: false },
+  goals: { loaded: false, loading: false },
+  habits: { loaded: false, loading: false },
+  finance: { loaded: false, loading: false },
+};
+
+const VIEW_LOAD_TARGETS = {
+  overview: ['#stats-grid'],
+  plans: ['#plans-list'],
+  goals: ['#goals-list'],
+  habits: ['#habits-list'],
+  finance: ['#finance-hero', '#transactions-list'],
+};
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
@@ -48,7 +65,7 @@ async function init() {
   bindModal();
   bindFilters();
   bindDelegatedActions();
-  await refreshAll();
+  await loadView('overview');
 }
 
 function bindNavigation() {
@@ -149,7 +166,7 @@ function bindDelegatedActions() {
       case 'edit-transaction': openModal('finance', id); break;
       case 'toggle-task': await toggleTask(id, btn.dataset.taskId); break;
       case 'select-day': selectWeekDay(btn.dataset.date); break;
-      case 'retry-load': await refreshAll(); break;
+      case 'retry-load': await loadView(currentView, { force: true }); break;
       case 'add-task-row': addTaskRow(); break;
       case 'remove-task-row': btn.closest('.task-editor-row')?.remove(); break;
     }
@@ -190,38 +207,136 @@ function switchView(view) {
   }
 
   window.scrollTo({ top: 0, behavior: 'smooth' });
+  loadView(view);
 }
 
-async function refreshAll() {
-  setLoading(true);
+function invalidateViews(...views) {
+  views.forEach((view) => {
+    if (viewState[view]) viewState[view].loaded = false;
+  });
+}
+
+async function refreshAfterMutation(...views) {
+  invalidateViews(...views);
+  if (views.includes(currentView)) {
+    await loadView(currentView, { force: true });
+  }
+}
+
+async function ensureGoalsLoaded() {
+  if (!viewState.goals.loaded && !viewState.goals.loading) {
+    await loadView('goals');
+  }
+}
+
+async function loadView(view, { force = false } = {}) {
+  if (!viewState[view]) return;
+  if (viewState[view].loading) return;
+
+  if (viewState[view].loaded && !force) {
+    renderView(view);
+    return;
+  }
+
+  viewState[view].loading = true;
   loadError = null;
+  setViewLoading(view, true);
+
   try {
     const today = localDateStr();
-    [overview, plans, goals, habits, transactions] = await Promise.all([
-      fetchJSON(`${API}/overview?today=${today}`),
-      fetchJSON(`${API}/plans`),
-      fetchJSON(`${API}/goals`),
-      fetchJSON(`${API}/habits?today=${today}`),
-      fetchJSON(`${API}/transactions`),
-    ]);
-    renderAll();
+    switch (view) {
+      case 'overview':
+        overview = await fetchJSON(`${API}/overview?today=${today}`);
+        break;
+      case 'plans':
+        plans = await fetchJSON(`${API}/plans`);
+        break;
+      case 'goals':
+        goals = await fetchJSON(`${API}/goals`);
+        break;
+      case 'habits':
+        habits = await fetchJSON(`${API}/habits?today=${today}`);
+        break;
+      case 'finance':
+        [financeStats, transactions] = await Promise.all([
+          fetchJSON(`${API}/finance/stats?today=${today}`),
+          fetchJSON(`${API}/transactions`),
+        ]);
+        break;
+      default:
+        return;
+    }
+    viewState[view].loaded = true;
+    renderView(view);
+    renderErrorBanner();
   } catch (err) {
     loadError = err.message || 'Napaka pri nalaganju';
     toast(loadError, true);
     renderErrorBanner();
   } finally {
-    setLoading(false);
+    viewState[view].loading = false;
+    setViewLoading(view, false);
   }
 }
 
-function renderAll() {
-  renderErrorBanner();
-  renderOverview();
-  renderWeekNav();
-  renderPlans();
-  renderGoals();
-  renderHabits();
-  renderFinance();
+function renderView(view) {
+  switch (view) {
+    case 'overview':
+      renderOverview();
+      break;
+    case 'plans':
+      renderWeekNav();
+      renderPlans();
+      break;
+    case 'goals':
+      renderGoals();
+      break;
+    case 'habits':
+      renderHabits();
+      break;
+    case 'finance':
+      renderFinance();
+      break;
+    default:
+      break;
+  }
+}
+
+function setViewLoading(view, on) {
+  const targets = VIEW_LOAD_TARGETS[view] || [];
+  for (const selector of targets) {
+    const el = $(selector);
+    if (!el) continue;
+    if (on) {
+      el.dataset.loadingBackup = el.innerHTML;
+      el.innerHTML = '<div class="view-status"><div class="loading-spinner"></div><span>Nalaganje...</span></div>';
+    } else if (el.dataset.loadingBackup !== undefined) {
+      delete el.dataset.loadingBackup;
+    }
+  }
+}
+
+function financeStatsToCharts(stats) {
+  if (!stats) return null;
+  return {
+    financeMonthly: stats.monthlyTrend || [],
+    expenseCategories: Object.entries(stats.byCategory || {}).map(([label, value]) => ({ label, value })),
+  };
+}
+
+function mutationViewsForType(type) {
+  switch (type) {
+    case 'plans':
+      return ['overview', 'plans'];
+    case 'goals':
+      return ['overview', 'goals', 'finance'];
+    case 'habits':
+      return ['overview', 'habits'];
+    case 'finance':
+      return ['overview', 'finance', 'goals'];
+    default:
+      return ['overview'];
+  }
 }
 
 function renderErrorBanner() {
@@ -544,10 +659,11 @@ function renderHabits() {
   }).join('');
 }
 
-function openModal(type, id = null) {
+async function openModal(type, id = null) {
   closeMoreSheet();
   editingId = id;
   modalType = type;
+
   const fields = $('#modal-fields');
   fields.innerHTML = '';
 
@@ -563,6 +679,7 @@ function openModal(type, id = null) {
     $('#modal-title').textContent = id ? 'Uredi navado' : 'Nova navada';
     fields.innerHTML = habitFormHTML(id ? habits.find((h) => h.id === id) : null);
   } else if (type === 'finance') {
+    await ensureGoalsLoaded();
     $('#modal-title').textContent = id ? 'Uredi transakcijo' : 'Nova transakcija';
     fields.innerHTML = transactionFormHTML(id ? transactions.find((t) => t.id === id) : null);
     updateTxCategories();
@@ -747,7 +864,7 @@ async function handleFormSubmit(e) {
       }
     }
     closeModal();
-    await refreshAll();
+    await refreshAfterMutation(...mutationViewsForType(type));
   } catch (err) {
     toast(err.message || 'Napaka', true);
   } finally {
@@ -766,7 +883,7 @@ async function cycleStatus(id) {
   try {
     await fetchJSON(`${API}/plans/${id}`, { method: 'PATCH', body: JSON.stringify({ status: next }) });
     toast('Status posodobljen');
-    await refreshAll();
+    await refreshAfterMutation('overview', 'plans');
   } catch (err) {
     toast(err.message, true);
   }
@@ -778,7 +895,7 @@ async function toggleTask(planId, taskId) {
   const tasks = (plan.tasks || []).map((t) => t.id === taskId ? { ...t, done: !t.done } : t);
   try {
     await fetchJSON(`${API}/plans/${planId}`, { method: 'PATCH', body: JSON.stringify({ tasks }) });
-    await refreshAll();
+    await refreshAfterMutation('overview', 'plans');
   } catch (err) {
     toast(err.message, true);
   }
@@ -789,7 +906,7 @@ async function deletePlan(id) {
   try {
     await fetchJSON(`${API}/plans/${id}`, { method: 'DELETE' });
     toast('Načrt izbrisan');
-    await refreshAll();
+    await refreshAfterMutation('overview', 'plans');
   } catch (err) {
     toast(err.message, true);
   }
@@ -800,7 +917,7 @@ async function deleteGoal(id) {
   try {
     await fetchJSON(`${API}/goals/${id}`, { method: 'DELETE' });
     toast('Cilj izbrisan');
-    await refreshAll();
+    await refreshAfterMutation('overview', 'goals', 'finance');
   } catch (err) {
     toast(err.message, true);
   }
@@ -811,7 +928,7 @@ async function deleteHabit(id) {
   try {
     await fetchJSON(`${API}/habits/${id}`, { method: 'DELETE' });
     toast('Navada izbrisana');
-    await refreshAll();
+    await refreshAfterMutation('overview', 'habits');
   } catch (err) {
     toast(err.message, true);
   }
@@ -824,7 +941,7 @@ async function markHabitDone(id) {
       body: JSON.stringify({ date: localDateStr() }),
     });
     toast('Odlično! 🔥');
-    await refreshAll();
+    await refreshAfterMutation('overview', 'habits');
   } catch (err) {
     toast(err.message, true);
   }
@@ -837,7 +954,7 @@ async function undoHabitDone(id) {
       body: JSON.stringify({ date: localDateStr() }),
     });
     toast('Check-in razveljavljen');
-    await refreshAll();
+    await refreshAfterMutation('overview', 'habits');
   } catch (err) {
     toast(err.message, true);
   }
@@ -855,11 +972,12 @@ function renderFinanceSummary(selector, finance) {
 }
 
 function renderFinance() {
-  const finance = overview?.finance;
+  const finance = financeStats || overview?.finance;
   renderFinanceSummary('#finance-hero', finance);
 
-  if (overview?.charts) {
-    renderCharts(overview.charts, '');
+  const charts = financeStats ? financeStatsToCharts(financeStats) : overview?.charts;
+  if (charts) {
+    renderCharts(charts, '');
   }
 
   renderTransactions();
@@ -938,7 +1056,7 @@ async function deleteTransaction(id) {
   try {
     await fetchJSON(`${API}/transactions/${id}`, { method: 'DELETE' });
     toast('Transakcija izbrisana');
-    await refreshAll();
+    await refreshAfterMutation('overview', 'finance', 'goals');
   } catch (err) {
     toast(err.message, true);
   }

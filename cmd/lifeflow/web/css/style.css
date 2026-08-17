@@ -332,6 +332,22 @@ body {
   margin-bottom: 8px;
 }
 
+.view-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 40px 16px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.view-status .loading-spinner {
+  width: 22px;
+  height: 22px;
+  border-width: 2px;
+}
+
 /* Mini list items */
 .mini-item {
   display: flex;
