@@ -802,6 +802,118 @@ body {
   to { opacity: 1; transform: translateX(0); }
 }
 
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(247, 245, 240, 0.85);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.loading-overlay[hidden] {
+  display: none;
+}
+
+.loading-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.week-day.overdue-tab {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.week-day.overdue-tab.active {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+
+.task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.task-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.88rem;
+}
+
+.task-item input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+.task-item.done span {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.task-progress {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.tasks-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-editor-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.task-editor-row input {
+  flex: 1;
+}
+
+.badge-paused {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.error-banner {
+  background: var(--danger-light);
+  color: var(--danger);
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.error-banner button {
+  flex-shrink: 0;
+}
+
+body.modal-open {
+  overflow: hidden;
+}
+
 /* Responsive — mobile first enhancements */
 @media (max-width: 900px) {
   .app {

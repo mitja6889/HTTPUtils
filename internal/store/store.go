@@ -6,9 +6,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/mitja6889/HTTPUtils/internal/models"
+	"github.com/mitja6889/HTTPUtils/internal/validate"
 )
 
 var (
@@ -26,9 +30,10 @@ func New(path string) (*Store, error) {
 	s := &Store{
 		path: path,
 		data: models.DataStore{
-			Plans:  []models.Plan{},
-			Goals:  []models.Goal{},
-			Habits: []models.Habit{},
+			Version: models.DataStoreVersion,
+			Plans:   []models.Plan{},
+			Goals:   []models.Goal{},
+			Habits:  []models.Habit{},
 		},
 	}
 
@@ -46,10 +51,7 @@ func New(path string) (*Store, error) {
 		return nil, err
 	}
 
-	if err := s.SeedIfEmpty(); err != nil {
-		return nil, err
-	}
-
+	s.normalizeData()
 	return s, nil
 }
 
@@ -59,15 +61,35 @@ func (s *Store) load() error {
 		return fmt.Errorf("read data file: %w", err)
 	}
 
-	if len(raw) == 0 {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" {
 		return nil
 	}
 
-	if err := json.Unmarshal(raw, &s.data); err != nil {
-		return fmt.Errorf("parse data file: %w", err)
+	if err := json.Unmarshal([]byte(trimmed), &s.data); err != nil {
+		backup := s.path + ".corrupt." + time.Now().UTC().Format("20060102-150405")
+		if renameErr := os.Rename(s.path, backup); renameErr != nil {
+			return fmt.Errorf("parse data file: %w (backup failed: %v)", err, renameErr)
+		}
+		return nil
 	}
 
 	return nil
+}
+
+func (s *Store) normalizeData() {
+	if s.data.Version == 0 {
+		s.data.Version = models.DataStoreVersion
+	}
+	if s.data.Plans == nil {
+		s.data.Plans = []models.Plan{}
+	}
+	if s.data.Goals == nil {
+		s.data.Goals = []models.Goal{}
+	}
+	if s.data.Habits == nil {
+		s.data.Habits = []models.Habit{}
+	}
 }
 
 func (s *Store) save() error {
@@ -77,7 +99,7 @@ func (s *Store) save() error {
 	}
 
 	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0o644); err != nil {
+	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
 		return fmt.Errorf("write temp file: %w", err)
 	}
 
@@ -170,9 +192,11 @@ func (s *Store) DeletePlan(id string) error {
 			continue
 		}
 
+		removed := p
 		s.data.Plans = append(s.data.Plans[:i], s.data.Plans[i+1:]...)
 
 		if err := s.save(); err != nil {
+			s.data.Plans = append(s.data.Plans[:i], append([]models.Plan{removed}, s.data.Plans[i:]...)...)
 			return err
 		}
 
@@ -180,6 +204,19 @@ func (s *Store) DeletePlan(id string) error {
 	}
 
 	return ErrNotFound
+}
+
+func (s *Store) GetGoal(id string) (models.Goal, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, g := range s.data.Goals {
+		if g.ID == id {
+			return g, nil
+		}
+	}
+
+	return models.Goal{}, ErrNotFound
 }
 
 func (s *Store) ListGoals() []models.Goal {
@@ -247,9 +284,11 @@ func (s *Store) DeleteGoal(id string) error {
 			continue
 		}
 
+		removed := g
 		s.data.Goals = append(s.data.Goals[:i], s.data.Goals[i+1:]...)
 
 		if err := s.save(); err != nil {
+			s.data.Goals = append(s.data.Goals[:i], append([]models.Goal{removed}, s.data.Goals[i:]...)...)
 			return err
 		}
 
@@ -259,13 +298,29 @@ func (s *Store) DeleteGoal(id string) error {
 	return ErrNotFound
 }
 
-func (s *Store) ListHabits() []models.Habit {
+func (s *Store) ListHabits(today string) []models.Habit {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	out := make([]models.Habit, len(s.data.Habits))
-	copy(out, s.data.Habits)
+	for i, h := range s.data.Habits {
+		h.Streak = validate.EffectiveHabitStreak(h, today)
+		out[i] = h
+	}
 	return out
+}
+
+func (s *Store) GetHabit(id string) (models.Habit, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, h := range s.data.Habits {
+		if h.ID == id {
+			return h, nil
+		}
+	}
+
+	return models.Habit{}, ErrNotFound
 }
 
 func (s *Store) CreateHabit(habit models.Habit) (models.Habit, error) {
@@ -322,9 +377,11 @@ func (s *Store) DeleteHabit(id string) error {
 			continue
 		}
 
+		removed := h
 		s.data.Habits = append(s.data.Habits[:i], s.data.Habits[i+1:]...)
 
 		if err := s.save(); err != nil {
+			s.data.Habits = append(s.data.Habits[:i], append([]models.Habit{removed}, s.data.Habits[i:]...)...)
 			return err
 		}
 
@@ -334,17 +391,23 @@ func (s *Store) DeleteHabit(id string) error {
 	return ErrNotFound
 }
 
-func (s *Store) Overview() models.Overview {
+func (s *Store) Overview(today string) models.Overview {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	today := models.TodayDate()
-	overview := models.Overview{
-		PlansByCategory: map[string]int{},
-		PlansByPriority: map[string]int{},
-		RecentPlans:     []models.Plan{},
-		UpcomingPlans:   []models.Plan{},
+	if today == "" {
+		today = models.TodayDate()
 	}
+
+	overview := models.Overview{
+		PlansByCategory:  map[string]int{},
+		PlansByPriority:  map[string]int{},
+		RecentPlans:      []models.Plan{},
+		UpcomingPlans:    []models.Plan{},
+		OverduePlansList: []models.Plan{},
+	}
+
+	var upcoming []models.Plan
 
 	for _, p := range s.data.Plans {
 		overview.TotalPlans++
@@ -362,14 +425,26 @@ func (s *Store) Overview() models.Overview {
 
 		if p.DueDate != "" && p.DueDate < today && p.Status != models.PlanStatusDone {
 			overview.OverduePlans++
+			overview.OverduePlansList = append(overview.OverduePlansList, p)
 		}
 
 		if p.DueDate != "" && p.DueDate >= today && p.Status != models.PlanStatusDone {
-			if len(overview.UpcomingPlans) < 5 {
-				overview.UpcomingPlans = append(overview.UpcomingPlans, p)
-			}
+			upcoming = append(upcoming, p)
 		}
 	}
+
+	sort.Slice(upcoming, func(i, j int) bool {
+		return upcoming[i].DueDate < upcoming[j].DueDate
+	})
+	if len(upcoming) > 5 {
+		overview.UpcomingPlans = append(overview.UpcomingPlans, upcoming[:5]...)
+	} else {
+		overview.UpcomingPlans = append(overview.UpcomingPlans, upcoming...)
+	}
+
+	sort.Slice(overview.OverduePlansList, func(i, j int) bool {
+		return overview.OverduePlansList[i].DueDate < overview.OverduePlansList[j].DueDate
+	})
 
 	if len(s.data.Plans) > 5 {
 		overview.RecentPlans = append(overview.RecentPlans, s.data.Plans[:5]...)
@@ -386,6 +461,8 @@ func (s *Store) Overview() models.Overview {
 			overview.ActiveGoals++
 		case models.GoalStatusCompleted:
 			overview.CompletedGoals++
+		case models.GoalStatusPaused:
+			overview.PausedGoals++
 		}
 	}
 
@@ -395,7 +472,7 @@ func (s *Store) Overview() models.Overview {
 
 	overview.TotalHabits = len(s.data.Habits)
 	for _, h := range s.data.Habits {
-		overview.TotalStreak += h.Streak
+		overview.TotalStreak += validate.EffectiveHabitStreak(h, today)
 	}
 
 	return overview

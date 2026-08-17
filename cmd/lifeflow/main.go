@@ -1,14 +1,18 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"flag"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/mitja6889/HTTPUtils/internal/api"
 	"github.com/mitja6889/HTTPUtils/internal/store"
@@ -46,9 +50,30 @@ func main() {
 	fileServer := http.FileServer(http.FS(webRoot))
 	mux.Handle("/", spaHandler(webRoot, fileServer))
 
-	log.Printf("LifeFlow running at http://localhost%s", *addr)
-	if err := http.ListenAndServe(*addr, withCORS(mux)); err != nil {
-		log.Fatalf("server: %v", err)
+	server := &http.Server{
+		Addr:              *addr,
+		Handler:           withMiddleware(mux),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+
+	go func() {
+		log.Printf("LifeFlow running at http://localhost%s", *addr)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("server: %v", err)
+		}
+	}()
+
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+	<-stop
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := server.Shutdown(ctx); err != nil {
+		log.Fatalf("shutdown: %v", err)
 	}
 }
 
@@ -63,7 +88,7 @@ func defaultDataPath() string {
 func spaHandler(webRoot fs.FS, fileServer http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
-			http.NotFound(w, r)
+			api.WriteNotFound(w)
 			return
 		}
 
@@ -80,8 +105,11 @@ func spaHandler(webRoot fs.FS, fileServer http.Handler) http.Handler {
 	})
 }
 
-func withCORS(next http.Handler) http.Handler {
+func withMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")

@@ -1,28 +1,10 @@
 const API = '/api';
 
 const LABELS = {
-  category: {
-    work: 'Delo',
-    health: 'Zdravje',
-    personal: 'Osebno',
-    learning: 'Učenje',
-    other: 'Ostalo',
-  },
-  priority: {
-    low: 'Nizka',
-    medium: 'Srednja',
-    high: 'Visoka',
-  },
-  status: {
-    todo: 'Za narediti',
-    in_progress: 'V teku',
-    done: 'Končano',
-  },
-  goalStatus: {
-    active: 'Aktiven',
-    completed: 'Dokončan',
-    paused: 'Pavza',
-  },
+  category: { work: 'Delo', health: 'Zdravje', personal: 'Osebno', learning: 'Učenje', other: 'Ostalo' },
+  priority: { low: 'Nizka', medium: 'Srednja', high: 'Visoka' },
+  status: { todo: 'Za narediti', in_progress: 'V teku', done: 'Končano' },
+  goalStatus: { active: 'Aktiven', completed: 'Dokončan', paused: 'Pavza' },
 };
 
 const VIEW_META = {
@@ -32,13 +14,18 @@ const VIEW_META = {
   habits: { title: 'Navade', subtitle: 'Dnevne rutine za boljše življenje', add: true, addLabel: 'Dodaj navado' },
 };
 
+const HABIT_ICONS = ['✨', '🏃', '📚', '💧', '🧘', '💪', '🥗', '😴', '📝', '🎨', '🌿', '🔥', '⭐', '🎯', '☀️', '🌙', '🍎', '🚶', '🧠', '❤️'];
+
 let currentView = 'overview';
 let plans = [];
 let goals = [];
 let habits = [];
 let overview = null;
 let editingId = null;
-let selectedWeekDay = todayStr();
+let selectedWeekDay = localDateStr();
+let planViewMode = 'day';
+let modalTasks = [];
+let loadError = null;
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
@@ -50,35 +37,14 @@ async function init() {
   bindNavigation();
   bindModal();
   bindFilters();
+  bindDelegatedActions();
   await refreshAll();
-}
-
-function setTodayDate() {
-  const formatted = new Date().toLocaleDateString('sl-SI', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
-
-  const el = $('#today-date');
-  if (el) el.textContent = formatted;
-
-  const mobile = $('#mobile-date');
-  if (mobile) {
-    mobile.textContent = new Date().toLocaleDateString('sl-SI', {
-      weekday: 'short',
-      day: 'numeric',
-      month: 'short',
-    });
-  }
 }
 
 function bindNavigation() {
   $$('.nav-item, .bottom-nav-item').forEach((btn) => {
     btn.addEventListener('click', () => switchView(btn.dataset.view));
   });
-
   $('#add-btn').addEventListener('click', () => openModal(currentView));
 }
 
@@ -88,23 +54,56 @@ function bindModal() {
   $('#modal-overlay').addEventListener('click', (e) => {
     if (e.target === $('#modal-overlay')) closeModal();
   });
-
   $('#modal-form').addEventListener('submit', handleFormSubmit);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !$('#modal-overlay').hidden) closeModal();
+  });
 }
 
 function bindFilters() {
-  ['plan-search', 'plan-filter-status', 'plan-filter-category'].forEach((id) => {
+  ['plan-search', 'plan-filter-status', 'plan-filter-category', 'plan-filter-view'].forEach((id) => {
     const el = document.getElementById(id);
-    if (el) el.addEventListener('input', renderPlans);
-    if (el) el.addEventListener('change', renderPlans);
+    if (!el) return;
+    el.addEventListener('input', onPlanFiltersChanged);
+    el.addEventListener('change', onPlanFiltersChanged);
+  });
+}
+
+function onPlanFiltersChanged() {
+  planViewMode = $('#plan-filter-view')?.value || 'day';
+  const weekNav = $('#week-nav');
+  if (weekNav) weekNav.hidden = planViewMode !== 'day';
+  renderPlans();
+}
+
+function bindDelegatedActions() {
+  document.body.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+
+    const { action, id } = btn.dataset;
+    switch (action) {
+      case 'cycle-status': await cycleStatus(id); break;
+      case 'edit-plan': openModal('plans', id); break;
+      case 'delete-plan': await deletePlan(id); break;
+      case 'edit-goal': openModal('goals', id); break;
+      case 'delete-goal': await deleteGoal(id); break;
+      case 'edit-habit': openModal('habits', id); break;
+      case 'delete-habit': await deleteHabit(id); break;
+      case 'habit-done': await markHabitDone(id); break;
+      case 'habit-undo': await undoHabitDone(id); break;
+      case 'toggle-task': await toggleTask(id, btn.dataset.taskId); break;
+      case 'select-day': selectWeekDay(btn.dataset.date); break;
+      case 'retry-load': await refreshAll(); break;
+      case 'add-task-row': addTaskRow(); break;
+      case 'remove-task-row': btn.closest('.task-editor-row')?.remove(); break;
+    }
   });
 }
 
 function switchView(view) {
   currentView = view;
-  $$('.nav-item, .bottom-nav-item').forEach((b) => {
-    b.classList.toggle('active', b.dataset.view === view);
-  });
+  $$('.nav-item, .bottom-nav-item').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
   $$('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${view}`));
 
   const meta = VIEW_META[view];
@@ -112,31 +111,62 @@ function switchView(view) {
   $('#view-subtitle').textContent = meta.subtitle;
 
   const addBtn = $('#add-btn');
-  if (meta.add) {
-    addBtn.hidden = false;
-    addBtn.innerHTML = `<span>+</span> ${meta.addLabel}`;
-  } else {
-    addBtn.hidden = true;
-  }
+  addBtn.hidden = !meta.add;
+  if (meta.add) addBtn.innerHTML = `<span>+</span> ${meta.addLabel}`;
 }
 
 async function refreshAll() {
+  setLoading(true);
+  loadError = null;
   try {
+    const today = localDateStr();
     [overview, plans, goals, habits] = await Promise.all([
-      fetchJSON(`${API}/overview`),
+      fetchJSON(`${API}/overview?today=${today}`),
       fetchJSON(`${API}/plans`),
       fetchJSON(`${API}/goals`),
-      fetchJSON(`${API}/habits`),
+      fetchJSON(`${API}/habits?today=${today}`),
     ]);
-    renderOverview();
-    renderWeekNav();
-    renderPlans();
-    renderGoals();
-    renderHabits();
+    renderAll();
   } catch (err) {
-    toast('Napaka pri nalaganju podatkov', true);
-    console.error(err);
+    loadError = err.message || 'Napaka pri nalaganju';
+    toast(loadError, true);
+    renderErrorBanner();
+  } finally {
+    setLoading(false);
   }
+}
+
+function renderAll() {
+  renderErrorBanner();
+  renderOverview();
+  renderWeekNav();
+  renderPlans();
+  renderGoals();
+  renderHabits();
+}
+
+function renderErrorBanner() {
+  const main = $('.main');
+  let banner = $('#error-banner');
+  if (!loadError) {
+    banner?.remove();
+    return;
+  }
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'error-banner';
+    banner.className = 'error-banner';
+    main.insertBefore(banner, main.firstChild.nextSibling);
+  }
+  banner.innerHTML = `
+    <span>${esc(loadError)}</span>
+    <button class="btn btn-sm btn-primary" data-action="retry-load">Poskusi znova</button>
+  `;
+}
+
+function setLoading(on) {
+  const el = $('#loading');
+  if (el) el.hidden = !on;
 }
 
 async function fetchJSON(url, opts = {}) {
@@ -145,56 +175,54 @@ async function fetchJSON(url, opts = {}) {
     ...opts,
   });
   if (res.status === 204) return null;
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Request failed');
+
+  const contentType = res.headers.get('content-type') || '';
+  let data = null;
+  if (contentType.includes('application/json')) {
+    data = await res.json();
+  } else {
+    const text = await res.text();
+    throw new Error(text || `HTTP ${res.status}`);
+  }
+
+  if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
   return data;
+}
+
+function setTodayDate() {
+  const now = new Date();
+  const formatted = now.toLocaleDateString('sl-SI', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+  });
+  const el = $('#today-date');
+  if (el) el.textContent = formatted;
+  const mobile = $('#mobile-date');
+  if (mobile) {
+    mobile.textContent = now.toLocaleDateString('sl-SI', { weekday: 'short', day: 'numeric', month: 'short' });
+  }
 }
 
 function renderOverview() {
   if (!overview) return;
 
   $('#stats-grid').innerHTML = `
-    <div class="stat-card">
-      <div class="label">Skupaj načrtov</div>
-      <div class="value accent">${overview.totalPlans}</div>
-    </div>
-    <div class="stat-card">
-      <div class="label">V teku</div>
-      <div class="value">${overview.inProgressPlans}</div>
-    </div>
-    <div class="stat-card">
-      <div class="label">Končano</div>
-      <div class="value accent">${overview.completedPlans}</div>
-    </div>
-    <div class="stat-card">
-      <div class="label">Z zamudo</div>
-      <div class="value danger">${overview.overduePlans}</div>
-    </div>
-    <div class="stat-card">
-      <div class="label">Aktivni cilji</div>
-      <div class="value warm">${overview.activeGoals}</div>
-    </div>
-    <div class="stat-card">
-      <div class="label">Povp. napredek</div>
-      <div class="value">${Math.round(overview.avgGoalProgress)}%</div>
-    </div>
-    <div class="stat-card">
-      <div class="label">Navade</div>
-      <div class="value">${overview.totalHabits}</div>
-    </div>
-    <div class="stat-card">
-      <div class="label">Skupni streak</div>
-      <div class="value warm">${overview.totalStreak}🔥</div>
-    </div>
+    <div class="stat-card"><div class="label">Skupaj načrtov</div><div class="value accent">${overview.totalPlans}</div></div>
+    <div class="stat-card"><div class="label">V teku</div><div class="value">${overview.inProgressPlans}</div></div>
+    <div class="stat-card"><div class="label">Končano</div><div class="value accent">${overview.completedPlans}</div></div>
+    <div class="stat-card"><div class="label">Z zamudo</div><div class="value danger">${overview.overduePlans}</div></div>
+    <div class="stat-card"><div class="label">Aktivni cilji</div><div class="value warm">${overview.activeGoals}</div></div>
+    <div class="stat-card"><div class="label">Povp. napredek</div><div class="value">${Math.round(overview.avgGoalProgress)}%</div></div>
+    <div class="stat-card"><div class="label">Navade</div><div class="value">${overview.totalHabits}</div></div>
+    <div class="stat-card"><div class="label">Skupni streak</div><div class="value warm">${overview.totalStreak}🔥</div></div>
   `;
 
   renderMiniList('#recent-plans', overview.recentPlans, '📋', 'Ni načrtov še');
   renderMiniList('#upcoming-plans', overview.upcomingPlans, '📅', 'Ni prihajajočih rokov');
+  renderMiniList('#overdue-plans', overview.overduePlansList, '⚠️', 'Ni zamujenih načrtov');
 
   const cats = overview.plansByCategory || {};
   const max = Math.max(...Object.values(cats), 1);
   const catEl = $('#category-bars');
-
   const entries = Object.entries(cats);
   if (entries.length === 0) {
     catEl.innerHTML = '<div class="empty-state"><span>📊</span>Še ni podatkov</div>';
@@ -202,9 +230,7 @@ function renderOverview() {
     catEl.innerHTML = entries.map(([key, count]) => `
       <div class="cat-bar-row">
         <span class="cat-bar-label">${LABELS.category[key] || key}</span>
-        <div class="cat-bar-track">
-          <div class="cat-bar-fill" style="width: ${(count / max) * 100}%"></div>
-        </div>
+        <div class="cat-bar-track"><div class="cat-bar-fill" style="width:${(count / max) * 100}%"></div></div>
         <span class="cat-bar-count">${count}</span>
       </div>
     `).join('');
@@ -213,123 +239,134 @@ function renderOverview() {
 
 function renderMiniList(selector, items, icon, emptyText) {
   const el = $(selector);
-  if (!items || items.length === 0) {
+  if (!items?.length) {
     el.innerHTML = `<div class="empty-state"><span>${icon}</span>${emptyText}</div>`;
     return;
   }
-
-  el.innerHTML = items.map((p) => {
-    const color = statusColor(p.status);
-    return `
-      <div class="mini-item">
-        <span class="dot" style="background:${color}"></span>
-        <div class="info">
-          <div class="title">${esc(p.title)}</div>
-          <div class="meta">${LABELS.category[p.category] || p.category}${p.dueDate ? ' · ' + formatDate(p.dueDate) : ''}</div>
-        </div>
+  el.innerHTML = items.map((p) => `
+    <div class="mini-item">
+      <span class="dot" style="background:${statusColor(p.status)}"></span>
+      <div class="info">
+        <div class="title">${esc(p.title)}</div>
+        <div class="meta">${LABELS.category[p.category] || p.category}${p.dueDate ? ' · ' + formatDate(p.dueDate) : ''}</div>
       </div>
-    `;
-  }).join('');
+    </div>
+  `).join('');
 }
 
 function renderWeekNav() {
   const el = $('#week-nav');
   if (!el) return;
 
-  const today = todayStr();
-  const start = new Date(today + 'T00:00:00');
+  const today = localDateStr();
+  const overdueCount = plans.filter((p) => isOverdue(p, today)).length;
 
-  el.innerHTML = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(start);
-    d.setDate(d.getDate() + i);
-    const dateStr = d.toISOString().slice(0, 10);
+  let html = '';
+  if (overdueCount > 0) {
+    html += `
+      <button type="button" class="week-day overdue-tab ${selectedWeekDay === 'overdue' ? 'active' : ''}"
+        data-action="select-day" data-date="overdue">
+        <div class="week-day-name">Zamuda</div>
+        <div class="week-day-num">⚠</div>
+        <div class="week-day-count">${overdueCount}</div>
+      </button>`;
+  }
+
+  for (let i = 0; i < 7; i++) {
+    const dateStr = addDays(today, i);
+    const d = parseLocalDate(dateStr);
     const count = plans.filter((p) => p.dueDate === dateStr).length;
-    const isToday = dateStr === today;
-    const isActive = dateStr === selectedWeekDay;
-
-    return `
-      <button type="button" class="week-day ${isActive ? 'active' : ''} ${isToday ? 'today' : ''}"
-        onclick="selectWeekDay('${dateStr}')">
+    html += `
+      <button type="button" class="week-day ${selectedWeekDay === dateStr ? 'active' : ''} ${dateStr === today ? 'today' : ''}"
+        data-action="select-day" data-date="${dateStr}">
         <div class="week-day-name">${d.toLocaleDateString('sl-SI', { weekday: 'short' })}</div>
         <div class="week-day-num">${d.getDate()}</div>
         <div class="week-day-count">${count} ${count === 1 ? 'načrt' : 'načrti'}</div>
-      </button>
-    `;
-  }).join('');
+      </button>`;
+  }
+
+  el.innerHTML = html;
+  el.hidden = planViewMode !== 'day';
 }
 
-window.selectWeekDay = (dateStr) => {
+function selectWeekDay(dateStr) {
   selectedWeekDay = dateStr;
+  planViewMode = dateStr === 'overdue' ? 'overdue' : 'day';
+  const viewFilter = $('#plan-filter-view');
+  if (viewFilter) viewFilter.value = planViewMode === 'overdue' ? 'overdue' : 'day';
   renderWeekNav();
   renderPlans();
-};
+}
 
 function renderPlans() {
   const search = ($('#plan-search')?.value || '').toLowerCase();
   const statusFilter = $('#plan-filter-status')?.value || '';
   const catFilter = $('#plan-filter-category')?.value || '';
-  const today = todayStr();
+  const viewMode = $('#plan-filter-view')?.value || planViewMode;
+  const today = localDateStr();
 
   const filtered = plans.filter((p) => {
-    if (search && !p.title.toLowerCase().includes(search) && !(p.description || '').toLowerCase().includes(search)) return false;
+    if (search && !matchesSearch(p, search)) return false;
     if (statusFilter && p.status !== statusFilter) return false;
     if (catFilter && p.category !== catFilter) return false;
-    if (p.dueDate && p.dueDate !== selectedWeekDay) return false;
-    if (!p.dueDate && selectedWeekDay !== today) return false;
+
+    if (viewMode === 'all') return true;
+    if (viewMode === 'overdue') return isOverdue(p, today);
+    if (viewMode === 'day') {
+      if (selectedWeekDay === 'overdue') return isOverdue(p, today);
+      if (p.dueDate) return p.dueDate === selectedWeekDay;
+      return selectedWeekDay === today;
+    }
     return true;
   });
 
   const el = $('#plans-list');
-  if (filtered.length === 0) {
-    el.innerHTML = `<div class="empty-state"><span>📋</span>Ni načrtov za ta dan.</div>`;
+  if (!filtered.length) {
+    el.innerHTML = `<div class="empty-state"><span>📋</span>${emptyPlansMessage(viewMode)}</div>`;
     return;
   }
 
-  const grouped = groupPlansByDay(filtered);
-  el.innerHTML = grouped.map(({ date, label, items }) => `
+  el.innerHTML = groupPlansByDay(filtered).map(({ label, items }) => `
     <div class="day-group">
       <div class="day-group-header">
         <h3>${label}</h3>
         <span class="day-label">${items.length} ${items.length === 1 ? 'načrt' : 'načrti'}</span>
       </div>
-      <div class="day-group-plans">
-        ${items.map((p) => planCardHTML(p, today)).join('')}
-      </div>
+      <div class="day-group-plans">${items.map((p) => planCardHTML(p, today)).join('')}</div>
     </div>
   `).join('');
+}
+
+function emptyPlansMessage(viewMode) {
+  if (viewMode === 'overdue') return 'Ni zamujenih načrtov.';
+  if (viewMode === 'all') return 'Ni načrtov. Dodaj prvega!';
+  return 'Ni načrtov za ta dan.';
+}
+
+function matchesSearch(p, search) {
+  return p.title.toLowerCase().includes(search) || (p.description || '').toLowerCase().includes(search);
 }
 
 function groupPlansByDay(items) {
   const map = new Map();
   for (const p of items) {
-    const key = p.dueDate || todayStr();
+    const key = p.dueDate || 'no-date';
     if (!map.has(key)) map.set(key, []);
     map.get(key).push(p);
   }
-
   return [...map.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, plansForDay]) => ({
-      date,
-      label: formatDayLabel(date),
+      label: date === 'no-date' ? 'Brez roka' : formatDayLabel(date),
       items: plansForDay,
     }));
 }
 
-function formatDayLabel(dateStr) {
-  const today = todayStr();
-  const tomorrow = addDays(today, 1);
-  if (dateStr === today) return 'Danes';
-  if (dateStr === tomorrow) return 'Jutri';
-  return new Date(dateStr + 'T00:00:00').toLocaleDateString('sl-SI', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  });
-}
-
 function planCardHTML(p, today) {
-  const overdue = p.dueDate && p.dueDate < today && p.status !== 'done';
+  const overdue = isOverdue(p, today);
+  const tasks = p.tasks || [];
+  const doneTasks = tasks.filter((t) => t.done).length;
+
   return `
     <div class="plan-card" data-id="${p.id}">
       <div class="plan-card-header">
@@ -337,56 +374,59 @@ function planCardHTML(p, today) {
         <span class="badge badge-${p.status}">${LABELS.status[p.status]}</span>
       </div>
       ${p.description ? `<p class="plan-desc">${esc(p.description)}</p>` : ''}
+      ${tasks.length ? `<div class="task-progress">${doneTasks}/${tasks.length} podnalog</div>` : ''}
+      ${tasks.length ? `<div class="task-list">${tasks.map((t) => `
+        <label class="task-item ${t.done ? 'done' : ''}">
+          <input type="checkbox" ${t.done ? 'checked' : ''} data-action="toggle-task" data-id="${p.id}" data-task-id="${t.id}">
+          <span>${esc(t.title)}</span>
+        </label>`).join('')}</div>` : ''}
       <div class="plan-meta">
         <span class="badge badge-cat-${p.category}">${LABELS.category[p.category]}</span>
         <span class="badge badge-priority-${p.priority}">${LABELS.priority[p.priority]}</span>
         ${p.dueDate ? `<span class="badge ${overdue ? 'badge-overdue' : ''}">${overdue ? '⚠ ' : ''}${formatDate(p.dueDate)}</span>` : ''}
       </div>
       <div class="plan-actions">
-        ${p.status !== 'done' ? `<button class="btn btn-sm btn-primary" onclick="cycleStatus('${p.id}')">${nextStatusLabel(p.status)}</button>` : ''}
-        <button class="btn btn-sm btn-ghost" onclick="editPlan('${p.id}')">Uredi</button>
-        <button class="btn btn-sm btn-danger" onclick="deletePlan('${p.id}')">Izbriši</button>
+        ${p.status !== 'done' ? `<button class="btn btn-sm btn-primary" data-action="cycle-status" data-id="${p.id}">${nextStatusLabel(p.status)}</button>` : ''}
+        ${p.status === 'done' ? `<button class="btn btn-sm btn-ghost" data-action="cycle-status" data-id="${p.id}">Ponovno odpri</button>` : ''}
+        <button class="btn btn-sm btn-ghost" data-action="edit-plan" data-id="${p.id}">Uredi</button>
+        <button class="btn btn-sm btn-danger" data-action="delete-plan" data-id="${p.id}">Izbriši</button>
       </div>
-    </div>
-  `;
+    </div>`;
 }
 
 function renderGoals() {
   const el = $('#goals-list');
-  if (goals.length === 0) {
-    el.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><span>🎯</span>Ni ciljev. Postavi si prvega!</div>';
+  if (!goals.length) {
+    el.innerHTML = '<div class="empty-state"><span>🎯</span>Ni ciljev. Postavi si prvega!</div>';
     return;
   }
 
-  el.innerHTML = goals.map((g) => `
-    <div class="goal-card" data-id="${g.id}">
-      <h4>${esc(g.title)}</h4>
-      ${g.description ? `<p class="goal-desc">${esc(g.description)}</p>` : ''}
-      <div class="progress-label">
-        <span>Napredek</span>
-        <span>${g.progress}%</span>
-      </div>
-      <div class="progress-bar">
-        <div class="progress-fill" style="width:${g.progress}%"></div>
-      </div>
-      <div class="plan-meta">
-        <span class="badge badge-${g.status === 'completed' ? 'done' : 'in_progress'}">${LABELS.goalStatus[g.status]}</span>
-        ${g.targetDate ? `<span class="badge">${formatDate(g.targetDate)}</span>` : ''}
-      </div>
-      <div class="goal-actions">
-        <button class="btn btn-sm btn-primary" onclick="editGoal('${g.id}')">Uredi</button>
-        <button class="btn btn-sm btn-danger" onclick="deleteGoal('${g.id}')">Izbriši</button>
-      </div>
-    </div>
-  `).join('');
+  el.innerHTML = goals.map((g) => {
+    const badgeClass = g.status === 'completed' ? 'done' : g.status === 'paused' ? 'paused' : 'in_progress';
+    return `
+      <div class="goal-card" data-id="${g.id}">
+        <h4>${esc(g.title)}</h4>
+        ${g.description ? `<p class="goal-desc">${esc(g.description)}</p>` : ''}
+        <div class="progress-label"><span>Napredek</span><span>${g.progress}%</span></div>
+        <div class="progress-bar"><div class="progress-fill" style="width:${g.progress}%"></div></div>
+        <div class="plan-meta">
+          <span class="badge badge-${badgeClass}">${LABELS.goalStatus[g.status]}</span>
+          ${g.targetDate ? `<span class="badge">${formatDate(g.targetDate)}</span>` : ''}
+        </div>
+        <div class="goal-actions">
+          <button class="btn btn-sm btn-primary" data-action="edit-goal" data-id="${g.id}">Uredi</button>
+          <button class="btn btn-sm btn-danger" data-action="delete-goal" data-id="${g.id}">Izbriši</button>
+        </div>
+      </div>`;
+  }).join('');
 }
 
 function renderHabits() {
   const el = $('#habits-list');
-  const today = todayStr();
+  const today = localDateStr();
 
-  if (habits.length === 0) {
-    el.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><span>🔥</span>Ni navad. Začni z novo rutino!</div>';
+  if (!habits.length) {
+    el.innerHTML = '<div class="empty-state"><span>🔥</span>Ni navad. Začni z novo rutino!</div>';
     return;
   }
 
@@ -394,19 +434,19 @@ function renderHabits() {
     const doneToday = h.lastDone === today;
     return `
       <div class="habit-card" data-id="${h.id}">
-        <div class="habit-icon">${h.icon || '✨'}</div>
+        <div class="habit-icon">${esc(h.icon || '✨')}</div>
         <h4>${esc(h.name)}</h4>
         <div class="habit-streak">${h.streak}</div>
         <div class="habit-streak-label">${h.streak === 1 ? 'dan zapored' : 'dni zapored'}</div>
         <button class="btn btn-primary habit-done-btn ${doneToday ? 'done-today' : ''}"
-          onclick="markHabitDone('${h.id}')" ${doneToday ? 'disabled' : ''}>
-          ${doneToday ? '✓ Danes opravljeno' : 'Označi kot narejeno'}
+          data-action="${doneToday ? 'habit-undo' : 'habit-done'}" data-id="${h.id}" ${!doneToday && false ? 'disabled' : ''}>
+          ${doneToday ? '↩ Razveljavi danes' : 'Označi kot narejeno'}
         </button>
         <div class="habit-actions">
-          <button class="btn btn-sm btn-danger" onclick="deleteHabit('${h.id}')">Izbriši</button>
+          <button class="btn btn-sm btn-ghost" data-action="edit-habit" data-id="${h.id}">Uredi</button>
+          <button class="btn btn-sm btn-danger" data-action="delete-habit" data-id="${h.id}">Izbriši</button>
         </div>
-      </div>
-    `;
+      </div>`;
   }).join('');
 }
 
@@ -418,117 +458,101 @@ function openModal(type, id = null) {
   if (type === 'plans') {
     $('#modal-title').textContent = id ? 'Uredi načrt' : 'Nov načrt';
     const plan = id ? plans.find((p) => p.id === id) : null;
+    modalTasks = plan?.tasks ? plan.tasks.map((t) => ({ ...t })) : [];
     form.innerHTML = planFormHTML(plan);
   } else if (type === 'goals') {
     $('#modal-title').textContent = id ? 'Uredi cilj' : 'Nov cilj';
-    const goal = id ? goals.find((g) => g.id === id) : null;
-    form.innerHTML = goalFormHTML(goal);
+    form.innerHTML = goalFormHTML(id ? goals.find((g) => g.id === id) : null);
   } else if (type === 'habits') {
-    $('#modal-title').textContent = 'Nova navada';
-    form.innerHTML = habitFormHTML();
+    $('#modal-title').textContent = id ? 'Uredi navado' : 'Nova navada';
+    form.innerHTML = habitFormHTML(id ? habits.find((h) => h.id === id) : null);
   }
 
   $('#modal-overlay').hidden = false;
+  document.body.classList.add('modal-open');
 }
 
 function closeModal() {
   $('#modal-overlay').hidden = true;
+  document.body.classList.remove('modal-open');
   editingId = null;
+  modalTasks = [];
 }
 
 function planFormHTML(plan) {
   return `
-    <div class="form-group">
-      <label for="f-title">Naslov *</label>
-      <input class="form-input" id="f-title" required value="${esc(plan?.title || '')}">
-    </div>
-    <div class="form-group">
-      <label for="f-desc">Opis</label>
-      <textarea class="form-textarea" id="f-desc">${esc(plan?.description || '')}</textarea>
+    <div class="form-group"><label for="f-title">Naslov *</label><input class="form-input" id="f-title" required value="${esc(plan?.title || '')}"></div>
+    <div class="form-group"><label for="f-desc">Opis</label><textarea class="form-textarea" id="f-desc">${esc(plan?.description || '')}</textarea></div>
+    <div class="form-row">
+      <div class="form-group"><label for="f-category">Kategorija</label><select class="form-select" id="f-category">${selectOptions(LABELS.category, plan?.category || 'personal')}</select></div>
+      <div class="form-group"><label for="f-priority">Prioriteta</label><select class="form-select" id="f-priority">${selectOptions(LABELS.priority, plan?.priority || 'medium')}</select></div>
     </div>
     <div class="form-row">
-      <div class="form-group">
-        <label for="f-category">Kategorija</label>
-        <select class="form-select" id="f-category">
-          ${selectOptions(LABELS.category, plan?.category || 'personal')}
-        </select>
-      </div>
-      <div class="form-group">
-        <label for="f-priority">Prioriteta</label>
-        <select class="form-select" id="f-priority">
-          ${selectOptions(LABELS.priority, plan?.priority || 'medium')}
-        </select>
-      </div>
+      <div class="form-group"><label for="f-status">Status</label><select class="form-select" id="f-status">${selectOptions(LABELS.status, plan?.status || 'todo')}</select></div>
+      <div class="form-group"><label for="f-due">Rok</label><input class="form-input" type="date" id="f-due" value="${plan?.dueDate || (selectedWeekDay === 'overdue' ? localDateStr() : selectedWeekDay)}"></div>
     </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label for="f-status">Status</label>
-        <select class="form-select" id="f-status">
-          ${selectOptions(LABELS.status, plan?.status || 'todo')}
-        </select>
-      </div>
-      <div class="form-group">
-        <label for="f-due">Rok</label>
-        <input class="form-input" type="date" id="f-due" value="${plan?.dueDate || ''}">
-      </div>
-    </div>
-  `;
+    <div class="form-group">
+      <label>Podnaloge</label>
+      <div class="tasks-editor" id="tasks-editor">${renderTaskEditorRows()}</div>
+      <button type="button" class="btn btn-sm btn-ghost" data-action="add-task-row" style="margin-top:8px">+ Dodaj podnalogo</button>
+    </div>`;
+}
+
+function renderTaskEditorRows() {
+  if (!modalTasks.length) return '';
+  return modalTasks.map((t, i) => `
+    <div class="task-editor-row">
+      <input class="form-input" data-task-index="${i}" value="${esc(t.title)}" placeholder="Podnaloga">
+      <button type="button" class="btn btn-sm btn-danger" data-action="remove-task-row">×</button>
+    </div>`).join('');
+}
+
+function addTaskRow() {
+  modalTasks.push({ id: '', title: '', done: false, createdAt: '' });
+  $('#tasks-editor').innerHTML = renderTaskEditorRows();
+}
+
+function collectTasksFromEditor() {
+  const inputs = $$('#tasks-editor input[data-task-index]');
+  const result = [];
+  inputs.forEach((input, i) => {
+    const title = input.value.trim();
+    if (!title) return;
+    const existing = modalTasks[i] || {};
+    result.push({
+      id: existing.id || '',
+      title,
+      done: !!existing.done,
+      createdAt: existing.createdAt || '',
+    });
+  });
+  return result;
 }
 
 function goalFormHTML(goal) {
   return `
-    <div class="form-group">
-      <label for="f-title">Naslov *</label>
-      <input class="form-input" id="f-title" required value="${esc(goal?.title || '')}">
-    </div>
-    <div class="form-group">
-      <label for="f-desc">Opis</label>
-      <textarea class="form-textarea" id="f-desc">${esc(goal?.description || '')}</textarea>
-    </div>
+    <div class="form-group"><label for="f-title">Naslov *</label><input class="form-input" id="f-title" required value="${esc(goal?.title || '')}"></div>
+    <div class="form-group"><label for="f-desc">Opis</label><textarea class="form-textarea" id="f-desc">${esc(goal?.description || '')}</textarea></div>
     <div class="form-row">
-      <div class="form-group">
-        <label for="f-progress">Napredek (%)</label>
-        <input class="form-input" type="number" id="f-progress" min="0" max="100" value="${goal?.progress ?? 0}">
-      </div>
-      <div class="form-group">
-        <label for="f-target">Ciljni datum</label>
-        <input class="form-input" type="date" id="f-target" value="${goal?.targetDate || ''}">
-      </div>
+      <div class="form-group"><label for="f-progress">Napredek (%)</label><input class="form-input" type="number" id="f-progress" min="0" max="100" value="${goal?.progress ?? 0}"></div>
+      <div class="form-group"><label for="f-target">Ciljni datum</label><input class="form-input" type="date" id="f-target" value="${goal?.targetDate || ''}"></div>
     </div>
-    <div class="form-group">
-      <label for="f-gstatus">Status</label>
-      <select class="form-select" id="f-gstatus">
-        ${selectOptions(LABELS.goalStatus, goal?.status || 'active')}
-      </select>
-    </div>
-  `;
+    <div class="form-group"><label for="f-gstatus">Status</label><select class="form-select" id="f-gstatus">${selectOptions(LABELS.goalStatus, goal?.status || 'active')}</select></div>`;
 }
 
-function habitFormHTML() {
-  const icons = ['✨', '🏃', '📚', '💧', '🧘', '💪', '🥗', '😴', '📝', '🎨'];
+function habitFormHTML(habit) {
   return `
-    <div class="form-group">
-      <label for="f-name">Ime navade *</label>
-      <input class="form-input" id="f-name" required placeholder="npr. Jutranja meditacija">
-    </div>
-    <div class="form-group">
-      <label for="f-icon">Ikona</label>
-      <select class="form-select" id="f-icon">
-        ${icons.map((i) => `<option value="${i}">${i}</option>`).join('')}
-      </select>
-    </div>
-  `;
+    <div class="form-group"><label for="f-name">Ime navade *</label><input class="form-input" id="f-name" required value="${esc(habit?.name || '')}" placeholder="npr. Jutranja meditacija"></div>
+    <div class="form-group"><label for="f-icon">Ikona</label><select class="form-select" id="f-icon">${HABIT_ICONS.map((i) => `<option value="${i}" ${habit?.icon === i ? 'selected' : ''}>${i}</option>`).join('')}</select></div>`;
 }
 
 function selectOptions(labels, selected) {
-  return Object.entries(labels).map(([k, v]) =>
-    `<option value="${k}" ${k === selected ? 'selected' : ''}>${v}</option>`
-  ).join('');
+  return Object.entries(labels).map(([k, v]) => `<option value="${k}" ${k === selected ? 'selected' : ''}>${v}</option>`).join('');
 }
 
 async function handleFormSubmit(e) {
   e.preventDefault();
-
+  setLoading(true);
   try {
     if (currentView === 'plans') {
       const body = {
@@ -538,8 +562,8 @@ async function handleFormSubmit(e) {
         priority: $('#f-priority').value,
         status: $('#f-status').value,
         dueDate: $('#f-due').value,
+        tasks: collectTasksFromEditor(),
       };
-
       if (editingId) {
         await fetchJSON(`${API}/plans/${editingId}`, { method: 'PATCH', body: JSON.stringify(body) });
         toast('Načrt posodobljen');
@@ -555,7 +579,6 @@ async function handleFormSubmit(e) {
         targetDate: $('#f-target').value,
         status: $('#f-gstatus').value,
       };
-
       if (editingId) {
         await fetchJSON(`${API}/goals/${editingId}`, { method: 'PATCH', body: JSON.stringify(body) });
         toast('Cilj posodobljen');
@@ -564,28 +587,32 @@ async function handleFormSubmit(e) {
         toast('Cilj dodan');
       }
     } else if (currentView === 'habits') {
-      const body = {
-        name: $('#f-name').value,
-        icon: $('#f-icon').value,
-      };
-      await fetchJSON(`${API}/habits`, { method: 'POST', body: JSON.stringify(body) });
-      toast('Navada dodana');
+      const body = { name: $('#f-name').value, icon: $('#f-icon').value };
+      if (editingId) {
+        await fetchJSON(`${API}/habits/${editingId}`, { method: 'PATCH', body: JSON.stringify(body) });
+        toast('Navada posodobljena');
+      } else {
+        await fetchJSON(`${API}/habits`, { method: 'POST', body: JSON.stringify(body) });
+        toast('Navada dodana');
+      }
     }
-
     closeModal();
     await refreshAll();
   } catch (err) {
     toast(err.message || 'Napaka', true);
+  } finally {
+    setLoading(false);
   }
 }
 
-window.editPlan = (id) => openModal('plans', id);
-window.editGoal = (id) => openModal('goals', id);
-
-window.cycleStatus = async (id) => {
+async function cycleStatus(id) {
   const plan = plans.find((p) => p.id === id);
   if (!plan) return;
-  const next = plan.status === 'todo' ? 'in_progress' : plan.status === 'in_progress' ? 'done' : 'done';
+  let next = plan.status;
+  if (plan.status === 'todo') next = 'in_progress';
+  else if (plan.status === 'in_progress') next = 'done';
+  else next = 'todo';
+
   try {
     await fetchJSON(`${API}/plans/${id}`, { method: 'PATCH', body: JSON.stringify({ status: next }) });
     toast('Status posodobljen');
@@ -593,9 +620,21 @@ window.cycleStatus = async (id) => {
   } catch (err) {
     toast(err.message, true);
   }
-};
+}
 
-window.deletePlan = async (id) => {
+async function toggleTask(planId, taskId) {
+  const plan = plans.find((p) => p.id === planId);
+  if (!plan) return;
+  const tasks = (plan.tasks || []).map((t) => t.id === taskId ? { ...t, done: !t.done } : t);
+  try {
+    await fetchJSON(`${API}/plans/${planId}`, { method: 'PATCH', body: JSON.stringify({ tasks }) });
+    await refreshAll();
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+async function deletePlan(id) {
   if (!confirm('Res želiš izbrisati ta načrt?')) return;
   try {
     await fetchJSON(`${API}/plans/${id}`, { method: 'DELETE' });
@@ -604,9 +643,9 @@ window.deletePlan = async (id) => {
   } catch (err) {
     toast(err.message, true);
   }
-};
+}
 
-window.deleteGoal = async (id) => {
+async function deleteGoal(id) {
   if (!confirm('Res želiš izbrisati ta cilj?')) return;
   try {
     await fetchJSON(`${API}/goals/${id}`, { method: 'DELETE' });
@@ -615,9 +654,9 @@ window.deleteGoal = async (id) => {
   } catch (err) {
     toast(err.message, true);
   }
-};
+}
 
-window.deleteHabit = async (id) => {
+async function deleteHabit(id) {
   if (!confirm('Res želiš izbrisati to navado?')) return;
   try {
     await fetchJSON(`${API}/habits/${id}`, { method: 'DELETE' });
@@ -626,17 +665,33 @@ window.deleteHabit = async (id) => {
   } catch (err) {
     toast(err.message, true);
   }
-};
+}
 
-window.markHabitDone = async (id) => {
+async function markHabitDone(id) {
   try {
-    await fetchJSON(`${API}/habits/${id}/done`, { method: 'POST' });
+    await fetchJSON(`${API}/habits/${id}/done`, {
+      method: 'POST',
+      body: JSON.stringify({ date: localDateStr() }),
+    });
     toast('Odlično! 🔥');
     await refreshAll();
   } catch (err) {
     toast(err.message, true);
   }
-};
+}
+
+async function undoHabitDone(id) {
+  try {
+    await fetchJSON(`${API}/habits/${id}/undo`, {
+      method: 'POST',
+      body: JSON.stringify({ date: localDateStr() }),
+    });
+    toast('Check-in razveljavljen');
+    await refreshAll();
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
 
 function nextStatusLabel(status) {
   if (status === 'todo') return 'Začni';
@@ -650,25 +705,44 @@ function statusColor(status) {
   return '#a8a29e';
 }
 
-function formatDate(d) {
-  if (!d) return '';
-  return new Date(d + 'T00:00:00').toLocaleDateString('sl-SI', { day: 'numeric', month: 'short' });
+function isOverdue(plan, today) {
+  return plan.dueDate && plan.dueDate < today && plan.status !== 'done';
 }
 
-function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+function formatDate(d) {
+  if (!d) return '';
+  return parseLocalDate(d).toLocaleDateString('sl-SI', { day: 'numeric', month: 'short' });
+}
+
+function formatDayLabel(dateStr) {
+  const today = localDateStr();
+  if (dateStr === today) return 'Danes';
+  if (dateStr === addDays(today, 1)) return 'Jutri';
+  return parseLocalDate(dateStr).toLocaleDateString('sl-SI', { weekday: 'long', day: 'numeric', month: 'long' });
+}
+
+function localDateStr(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function parseLocalDate(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d);
 }
 
 function addDays(dateStr, days) {
-  const d = new Date(dateStr + 'T00:00:00');
+  const d = parseLocalDate(dateStr);
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return localDateStr(d);
 }
 
 function esc(str) {
-  const d = document.createElement('div');
-  d.textContent = str || '';
-  return d.innerHTML;
+  const el = document.createElement('div');
+  el.textContent = str || '';
+  return el.innerHTML;
 }
 
 function toast(msg, isError = false) {

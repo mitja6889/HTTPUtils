@@ -13,6 +13,11 @@
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
+  <div id="loading" class="loading-overlay" hidden>
+    <div class="loading-spinner"></div>
+    <p>Nalagam...</p>
+  </div>
+
   <div class="app">
     <header class="mobile-header">
       <div class="mobile-brand">
@@ -85,6 +90,13 @@
             <div class="card-body" id="upcoming-plans"></div>
           </div>
 
+          <div class="card">
+            <div class="card-header">
+              <h3>Z zamudo</h3>
+            </div>
+            <div class="card-body" id="overdue-plans"></div>
+          </div>
+
           <div class="card wide">
             <div class="card-header">
               <h3>Razporeditev po kategorijah</h3>
@@ -102,6 +114,11 @@
         <div class="filters">
           <input type="search" id="plan-search" placeholder="Išči načrte..." class="search-input">
           <div class="filter-row">
+            <select id="plan-filter-view" class="select">
+              <option value="day">Po dnevu</option>
+              <option value="all">Vsi načrti</option>
+              <option value="overdue">Z zamudo</option>
+            </select>
             <select id="plan-filter-status" class="select">
               <option value="">Vsi statusi</option>
               <option value="todo">Za narediti</option>
@@ -135,7 +152,7 @@
 
   <!-- MODAL -->
   <div class="modal-overlay" id="modal-overlay" hidden>
-    <div class="modal" role="dialog" aria-modal="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <div class="modal-header">
         <h3 id="modal-title">Dodaj</h3>
         <button class="btn-icon" id="modal-close" aria-label="Zapri">&times;</button>

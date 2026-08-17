@@ -77,27 +77,32 @@ type Habit struct {
 }
 
 type DataStore struct {
-	Plans  []Plan  `json:"plans"`
-	Goals  []Goal  `json:"goals"`
-	Habits []Habit `json:"habits"`
+	Version int     `json:"version"`
+	Plans   []Plan  `json:"plans"`
+	Goals   []Goal  `json:"goals"`
+	Habits  []Habit `json:"habits"`
 }
 
+const DataStoreVersion = 1
+
 type Overview struct {
-	TotalPlans      int            `json:"totalPlans"`
-	CompletedPlans  int            `json:"completedPlans"`
-	InProgressPlans int            `json:"inProgressPlans"`
-	TodoPlans       int            `json:"todoPlans"`
-	OverduePlans    int            `json:"overduePlans"`
-	TotalGoals      int            `json:"totalGoals"`
-	ActiveGoals     int            `json:"activeGoals"`
-	CompletedGoals  int            `json:"completedGoals"`
-	AvgGoalProgress float64        `json:"avgGoalProgress"`
-	TotalHabits     int            `json:"totalHabits"`
-	TotalStreak     int            `json:"totalStreak"`
-	PlansByCategory map[string]int `json:"plansByCategory"`
-	PlansByPriority map[string]int `json:"plansByPriority"`
-	RecentPlans     []Plan         `json:"recentPlans"`
-	UpcomingPlans   []Plan         `json:"upcomingPlans"`
+	TotalPlans       int            `json:"totalPlans"`
+	CompletedPlans   int            `json:"completedPlans"`
+	InProgressPlans  int            `json:"inProgressPlans"`
+	TodoPlans        int            `json:"todoPlans"`
+	OverduePlans     int            `json:"overduePlans"`
+	TotalGoals       int            `json:"totalGoals"`
+	ActiveGoals      int            `json:"activeGoals"`
+	CompletedGoals   int            `json:"completedGoals"`
+	PausedGoals      int            `json:"pausedGoals"`
+	AvgGoalProgress  float64        `json:"avgGoalProgress"`
+	TotalHabits      int            `json:"totalHabits"`
+	TotalStreak      int            `json:"totalStreak"`
+	PlansByCategory  map[string]int `json:"plansByCategory"`
+	PlansByPriority  map[string]int `json:"plansByPriority"`
+	RecentPlans      []Plan         `json:"recentPlans"`
+	UpcomingPlans    []Plan         `json:"upcomingPlans"`
+	OverduePlansList []Plan         `json:"overduePlansList"`
 }
 
 func NowISO() string {

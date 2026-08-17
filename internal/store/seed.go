@@ -88,7 +88,8 @@ func demoData() models.DataStore {
 	}
 
 	return models.DataStore{
-		Plans:  plans,
+		Version: models.DataStoreVersion,
+		Plans:   plans,
 		Goals:  goals,
 		Habits: habits,
 	}
